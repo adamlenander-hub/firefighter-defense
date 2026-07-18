@@ -36,8 +36,12 @@ import os
 import sqlite3
 from contextlib import asynccontextmanager, closing
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+# NOTE (ITEM-026/027 headless-testing unlock): FastAPI is imported lazily inside
+# build_app() below, NOT at module import time. That lets the command-line logic
+# (--check-content, --simulate) and the test suite import this module and run the
+# real game logic on machines where the web framework isn't installed (e.g. an
+# offline sandbox). The web routes and their behaviour are unchanged — only *where*
+# they're defined moved.
 
 # --- Configuration, all overridable by environment variable -------------------
 
@@ -147,19 +151,138 @@ MATRIX = {
     "F":          {"water": "danger", "foam": "danger", "co2": "danger",  "powder": "useless","wetchem": "good",    "metal": "useless"},
 }
 
-# Short German reasons for the dangerous pairings (the headline lessons). Used for
-# the teaching feedback later (ITEM-012) and to make check failures readable.
+# =============================================================================
+# ANTON — every line the castle ghost speaks, gathered in ONE labelled place
+# =============================================================================
+# DECISION (Adam, ITEM-026): keep ALL of Anton's text together, in this single
+# file, edited in this one spot — his "meet-the-fire" cards, his wrong-tool
+# feedback, the per-mission openings/anecdotes/hints/closings (ITEM-027), and the
+# supply-hazard warnings. Nothing about Anton is written anywhere else in the code;
+# everything below is data the rest of the program reads.
+#
+# Translation-ready (ITEM-001, German-first, English possible later): every line is
+# an L(...) node with a German string now and room for an English string beside it.
+# Only German is filled in today. To add English later, fill each node's "en".
+#
+# Anton's voice, kept consistent everywhere below: warm and encouraging, never
+# scolding; proud of the Freiwillige Feuerwehr Königstein; and endearingly
+# water-shy — but the joke is always that ANTON personally fears water, never that
+# water is a bad tool. On an ordinary wood/paper fire (Class A) water is correct,
+# and his lines never suggest otherwise. Any fire advice in his prose points to the
+# fire-safety reference's correct action for that fire (guarded by check_narration).
+
+def L(de: str, en: str | None = None) -> dict:
+    """One of Anton's lines, ready for translation: German now, English later."""
+    return {"de": de, "en": en}
+
+
+ANTON = {
+    # --- "Meet the fire" cards (ITEM-011): shown once per class, in Anton's voice.
+    #     Facts stay true to FIRE_SAFETY_REFERENCE.md.
+    "class_cards": {
+        "A": L("Holz, Papier, Stoff — ein ganz gewöhnliches Feuer. Keine Sorge: Wasser, Schaum oder Pulver löschen es sicher. (Ich halte beim Wasser nur lieber etwas Abstand …)"),
+        "B": L("Brennende Flüssigkeit! Kein Wasser, das spritzt nur. Schaum, Pulver oder CO₂ ersticken die Flammen."),
+        "C": L("Brennendes Gas. Wenn möglich zuerst die Gaszufuhr absperren! Pulver hält die Flamme in Schach."),
+        "electrical": L("Da steht etwas unter Strom. Bloß kein Wasser — Stromschlag! Am besten CO₂ (und den Strom abschalten)."),
+        "D": L("Brennendes Metall — heikel. Nur das Spezial-Metallbrandpulver hilft. Wasser wäre gefährlich."),
+        "F": L("Fett in der Fritteuse brennt. NIE Wasser — das gibt eine Stichflamme! Der Fettbrandlöscher hilft."),
+    },
+    # --- Wrong-tool feedback (ITEM-012). Danger reasons keyed "class|tool"; the
+    #     glue templates build the kind, never-scolding one-liner around them.
+    "danger_reasons": {
+        "F|water": L("Wasser im Fettbrand führt zur Fettexplosion (Stichflamme)."),
+        "electrical|water": L("Wasser leitet Strom – Stromschlaggefahr."),
+        "electrical|foam": L("Schaum leitet Strom – nicht auf Spannung."),
+        "electrical|wetchem": L("Fettbrandlöscher leitet Strom – nicht auf Elektrobrand."),
+        "D|water": L("Wasser auf brennendem Metall reagiert heftig."),
+        "D|foam": L("Wasserbasiertes Mittel auf Metall reagiert heftig."),
+        "D|wetchem": L("Wasserbasiertes Mittel auf Metall reagiert heftig."),
+        "B|water": L("Wasser verteilt die brennende Flüssigkeit."),
+        "F|foam": L("Wasserbasiertes Mittel im Fettbrand – Stichflammengefahr."),
+        "F|co2": L("CO₂ kann brennendes Fett wegschleudern."),
+    },
+    "feedback": {
+        "danger_fallback": L("Das macht es nur schlimmer!"),
+        "danger_suffix": L(" Nimm lieber {tool}."),
+        "useless": L("Das wirkt hier leider nicht."),
+        "useless_suffix": L(" Nimm {tool}."),
+    },
+    # --- Supply-hazard warnings (ITEM-016): shown when a fire is sprayed before its
+    #     gas/power supply is cut.
+    "hazard_warn": {
+        "gas": L("Bei Gasbränden zuerst die Gaszufuhr absperren!"),
+        "power": L("Bei Elektrobränden zuerst den Strom abschalten!"),
+    },
+    # --- Per-mission framing (ITEM-027): Anton opens each story mission by SENSING
+    #     the trouble (marked on the map) and telling a local Königstein ANECDOTE,
+    #     whispers ONE light, safe tactical HINT during play, and CLOSES with a short
+    #     reflection. Optional "bonus" line is Anton's narration when a mission is won
+    #     with nothing leaking (the people/records/stage kept safe) — pure story on
+    #     top of the unchanged tower-defense core (ITEM-030), never a second win path.
+    #
+    #     Guard (check_narration): a hint must never name a tool that is DANGEROUS on
+    #     one of that mission's fires as the thing to USE. Positive tool mentions in a
+    #     hint therefore stick to tools that are correct-and-never-dangerous across the
+    #     whole mission; dangerous tools appear only under a warning ("nie/kein …").
+    "missions": {
+        "fachwerk": {
+            "open": L("Riechst du das? Rauch zieht durch die Fachwerkgasse. Ich, Anton, spüre so etwas immer zuerst — hier bricht gleich Feuer aus. Schnell, die Wehr braucht dich!"),
+            "anecdote": L("Diese Gasse kenne ich seit 150 Jahren. Vor achtzig Jahren sprang hier schon einmal ein Funke von Balken zu Balken — die halbe Nachbarschaft stand mit Eimern bereit. In dem Haus dort wohnt ein altes Ehepaar, das Andenken an unsere Feuerwehr hütet. Die beschützen wir heute."),
+            "hint": L("Aus der Backstube kriechen Fettbrände — die brauchen ihren eigenen Löscher, niemals Wasser. Auf Holz und Strom ist das ABC-Pulver ein guter Freund, aber bloß kein Wasser auf die Leitung!"),
+            "close": L("Geschafft! Die Balken halten, das Ehepaar ist sicher. Weißt du, jedes Mal, wenn ich unsere Wehr so arbeiten sehe, wird mir ganz warm ums Geisterherz. Auf zum nächsten Einsatz!"),
+            "bonus": L("Rettungsbonus: Das alte Ehepaar und seine Andenken sind unversehrt."),
+        },
+        "bibliothek": {
+            "open": L("In meiner Burg — der Burgbibliothek! Ich spüre heiße Luft zwischen den Regalen. Eine alte Leitung glimmt und hat schon ein paar Bücher entzündet. Bitte, sei behutsam mit meinen Protokollen!"),
+            "anecdote": L("Hier lagern Einsatzprotokolle aus 150 Jahren. Vielleicht steht in einer dieser Kisten sogar mein eigener Name — der junge Burgwächter, der blieb. Nur: Wasser würde die alten Seiten für immer ruinieren. Am liebsten ist mir, wenn gar nichts auf die Papiere spritzt."),
+            "hint": L("Zuerst den Strom abschalten — das ist der sauberste Weg, ganz ohne Wasser auf den kostbaren Protokollen. Die brennenden Bücher sind ein gewöhnliches Feuer; nur die Leitung verträgt niemals Wasser."),
+            "close": L("Der Strom ist aus, die Bücher gerettet — und kein Blatt ist nass geworden! Schau, hier … „Anton, treuer Wächter der Burg“. Zum ersten Mal seit 150 Jahren fühle ich mich wirklich gesehen. Danke, dass du meine Geschichte gerettet hast."),
+            "bonus": L("Rettungsbonus: Kein einziges Protokoll ist verloren gegangen."),
+        },
+        "kurpark": {
+            "open": L("Ein Unwetter über dem Kurpark! Bäume krachen, und mittendrin sitzen eingeschlossene Besucher fest. Ich höre ihre Angst — und die der Tiere. Halt die Wege frei, damit ihnen nichts geschieht!"),
+            "anecdote": L("Der Kurpark war immer der Stolz von Königstein — Kurkonzerte, Sonntagsspaziergänge, verliebte Paare unter den alten Bäumen. Heute peitscht der Sturm Funken über die Wege. Bring die Menschen sicher zum Kurhaus, so wie es unsere Wehr seit jeher tut."),
+            "hint": L("Der Sturm treibt allerlei Feuer über die Wege — halt die Besucher frei! ABC-Pulver ist dein Allrounder für Holz, Flüssiges und Strom. Aber die Fritteuse vom Imbiss und der Strom: niemals Wasser, und der Fettbrand will seinen eigenen Löscher."),
+            "close": L("Der Sturm zieht ab, und alle Besucher sind wohlauf im Kurhaus. Dieses stille Dankeschön in ihren Augen — dafür lohnt sich alles. Zusammen sind wir stark, mein Freund."),
+            "bonus": L("Rettungsbonus: Alle eingeschlossenen Besucher sind in Sicherheit."),
+        },
+        "feuerwerk": {
+            "open": L("Das Jubiläumsfest! Und ausgerechnet jetzt kippt ein Feuerwerkskörper um und droht die Bühne zu entzünden. Ich liebe dieses Fest so sehr — bitte, rette die Bühne!"),
+            "anecdote": L("150 Jahre Freiwillige Feuerwehr Königstein — heute feiert die ganze Stadt. Neben der Bühne stehen Sprit für die Effekte, Kabel für die Lichter und ein E-Scooter-Akku am Ladepunkt. Ein Funke genügt. Aber wenn eine Gemeinschaft zusammensteht, fürchte selbst ich mich weniger."),
+            "hint": L("Am Bühnenrand mischen sich Sprit, Kabel und ein glühender Akku — ein heikles Trio! CO₂ bändigt Sprit und Kabel, sauber und ohne Rückstände. Den Akku zähmt nur das Metallbrandpulver; niemals Wasser hier."),
+            "close": L("Die Bühne steht, das Feuerwerk ist entschärft, und das Fest geht weiter! Sieh nur, wie alle zusammenhalten. Vielleicht … vielleicht bin ich ja doch ein kleiner Feuerwehrgeist. Danke, dass du an Königstein glaubst."),
+            "bonus": L("Rettungsbonus: Bühne und Festgäste sind unversehrt."),
+        },
+    },
+}
+
+
+def anton_de(path: tuple) -> str:
+    """Read one of Anton's German lines by its path in ANTON, e.g.
+    anton_de(("missions", "fachwerk", "open")). Returns '' if not present, so a
+    missing line can never crash a render."""
+    node = ANTON
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            return ""
+        node = node[key]
+    return node.get("de", "") if isinstance(node, dict) else ""
+
+
+def mission_lines_de(key: str) -> dict:
+    """Anton's per-mission framing (open/anecdote/hint/close/bonus) as plain German
+    strings for the browser. Empty dict if the mission has no framing."""
+    m = ANTON["missions"].get(key)
+    if not m:
+        return {}
+    return {field: line.get("de", "") for field, line in m.items()}
+
+
+# Backward-compatible views onto the single ANTON store, so the rest of the code
+# (and the existing tests) keep using the same names while the text lives in one
+# place. DANGER_REASONS is keyed by (class_id, tool_id) as before.
 DANGER_REASONS = {
-    ("F", "water"): "Wasser im Fettbrand führt zur Fettexplosion (Stichflamme).",
-    ("electrical", "water"): "Wasser leitet Strom – Stromschlaggefahr.",
-    ("electrical", "foam"): "Schaum leitet Strom – nicht auf Spannung.",
-    ("electrical", "wetchem"): "Fettbrandlöscher leitet Strom – nicht auf Elektrobrand.",
-    ("D", "water"): "Wasser auf brennendem Metall reagiert heftig.",
-    ("D", "foam"): "Wasserbasiertes Mittel auf Metall reagiert heftig.",
-    ("D", "wetchem"): "Wasserbasiertes Mittel auf Metall reagiert heftig.",
-    ("B", "water"): "Wasser verteilt die brennende Flüssigkeit.",
-    ("F", "foam"): "Wasserbasiertes Mittel im Fettbrand – Stichflammengefahr.",
-    ("F", "co2"): "CO₂ kann brennendes Fett wegschleudern.",
+    tuple(k.split("|")): v["de"] for k, v in ANTON["danger_reasons"].items()
 }
 
 # Safety-critical facts the check hard-asserts, so a wrong edit to any of these
@@ -175,16 +298,9 @@ CRITICAL_FACTS = [
     ("C", "powder", "good"),
 ]
 
-# Anton's short "meet the fire" explanations (ITEM-011), in his warm, encouraging
-# voice. Shown the first time each class appears. Facts stay true to the reference.
-CLASS_CARDS = {
-    "A": "Holz, Papier, Stoff — ein ganz gewöhnliches Feuer. Wasser, Schaum oder Pulver löschen es sicher.",
-    "B": "Brennende Flüssigkeit! Kein Wasser, das spritzt nur. Schaum, Pulver oder CO₂ ersticken die Flammen.",
-    "C": "Brennendes Gas. Wenn möglich zuerst die Gaszufuhr absperren! Pulver hält die Flamme in Schach.",
-    "electrical": "Da steht etwas unter Strom. Bloß kein Wasser — Stromschlag! Am besten CO₂ (und den Strom abschalten).",
-    "D": "Brennendes Metall — heikel. Nur das Spezial-Metallbrandpulver hilft. Wasser wäre gefährlich.",
-    "F": "Fett in der Fritteuse brennt. NIE Wasser — das gibt eine Stichflamme! Der Fettbrandlöscher hilft.",
-}
+# Anton's "meet the fire" explanations (ITEM-011). A backward-compatible view onto
+# the single ANTON store above (the text lives there, edited in one place).
+CLASS_CARDS = {cid: line["de"] for cid, line in ANTON["class_cards"].items()}
 
 
 # --- Supply-hazard mechanic (ITEM-016) ---------------------------------------
@@ -196,10 +312,7 @@ CLASS_CARDS = {
 HAZARD_CLASS = {"gas": "C", "power": "electrical"}
 HAZARD_ACTION_DE = {"gas": "Gaszufuhr absperren", "power": "Strom abschalten"}
 HAZARD_BUTTON_DE = {"gas": "🔧 Gas absperren", "power": "⚡ Strom abschalten"}
-HAZARD_WARN_DE = {
-    "gas": "Bei Gasbränden zuerst die Gaszufuhr absperren!",
-    "power": "Bei Elektrobränden zuerst den Strom abschalten!",
-}
+HAZARD_WARN_DE = {h: line["de"] for h, line in ANTON["hazard_warn"].items()}
 
 
 def right_tool_de(class_id: str) -> str:
@@ -228,10 +341,11 @@ def feedback_reason(class_id: str, tool_id: str) -> str | None:
     outcome = MATRIX.get(class_id, {}).get(tool_id)
     right = right_tool_de(class_id)
     if outcome == "danger":
-        why = DANGER_REASONS.get((class_id, tool_id), "Das macht es nur schlimmer!")
-        return why + (f" Nimm lieber {right}." if right else "")
+        why = DANGER_REASONS.get((class_id, tool_id)) or anton_de(("feedback", "danger_fallback"))
+        return why + (anton_de(("feedback", "danger_suffix")).format(tool=right) if right else "")
     if outcome == "useless":
-        return f"Das wirkt hier leider nicht. Nimm {right}." if right else "Das wirkt hier leider nicht."
+        base = anton_de(("feedback", "useless"))
+        return base + (anton_de(("feedback", "useless_suffix")).format(tool=right) if right else "")
     return None
 
 
@@ -427,6 +541,11 @@ def check_content(database_path: str = DATABASE_PATH) -> tuple[bool, list]:
 
 LEVELS = [
     {
+        # Campaign mission 1 (ITEM-027). Reuses the original first level; Anton's
+        # open/anecdote/hint/close framing lives in ANTON["missions"]["fachwerk"].
+        "key": "fachwerk",
+        "campaign": True,
+        "mission": 1,
         "name": "Die Nacht des Fachwerkfeuers",
         "place_de": "Enge Fachwerkgasse in der Königsteiner Altstadt",
         "size": {"w": 960, "h": 540},
@@ -447,6 +566,13 @@ LEVELS = [
         ],
     },
     {
+        # Campaign mission 3 (ITEM-027). Reuses the existing Kurpark fire level with
+        # storm + trapped-visitors framing (ITEM-030: the visitors are what you
+        # protect + an optional bonus in Anton's narration; the tower-defense core is
+        # UNCHANGED — winning is still only by the safe, correct fire choice).
+        "key": "kurpark",
+        "campaign": True,
+        "mission": 3,
         "name": "Der Kurpark im Sturm",
         "place_de": "Wege durch den Königsteiner Kurpark",
         "size": {"w": 960, "h": 540},
@@ -470,6 +596,9 @@ LEVELS = [
         # dealt with by cutting their supply (see "supplies"); spraying them does
         # nothing. Liquids need foam or powder; burning metal needs the special metal
         # powder (everything else is dangerous on metal).
+        "key": "schlosserei",
+        "campaign": False,   # side / training level — NOT one of the four story missions
+        "mission": None,
         "name": "Feuer in der Schlosserei",
         "place_de": "Die alte Schlosserei am Fuß des Königsteiner Burgbergs",
         "size": {"w": 960, "h": 540},
@@ -482,6 +611,72 @@ LEVELS = [
             {"gap": 1.3, "fires": ["A", "B", "A"]},
             {"gap": 1.2, "fires": ["C", "B", "electrical"]},
             {"gap": 1.1, "fires": ["D", "C", "electrical", "D"]},
+        ],
+    },
+    {
+        # Campaign mission 2 (ITEM-027) — NEW. The castle library. SIMPLIFIED (Adam's
+        # review): an ELECTRICAL fire (old wiring/lamp) among burning old books/paper
+        # (Class A) — no burning-metal fire here anymore (that moved to mission 4).
+        #
+        # DECISION (Adam): the library must teach "water is dangerous on the electrical
+        # fire, and the clean no-mess choice protects the records." Why this needs the
+        # cut-the-power step: an ordinary electrical+paper library CANNOT satisfy the
+        # "no single tool wins" guard on its own, because ABC powder is 'good' on BOTH
+        # electrical and Class A (and CO₂ clears both too), so a one-tool defence would
+        # win. Rather than re-add a specialist fire, this level declares supplies:
+        # ["power"] (the ITEM-016 mechanic): the live wiring can't be sprayed out at
+        # all — you must CUT THE POWER first (the cleanest, no-water, no-residue fix
+        # that leaves the priceless records untouched). Only then handle the burning
+        # books with an ordinary extinguisher. So winning needs TWO different safe
+        # actions, and no single tool can beat the level — the guard holds honestly,
+        # and the lesson is the reference's own headline: "cut the power first."
+        "key": "bibliothek",
+        "campaign": True,
+        "mission": 2,
+        "name": "Der Brand in der Burgbibliothek",
+        "place_de": "Das alte Archiv in der Königsteiner Burg",
+        "size": {"w": 960, "h": 540},
+        "path": [[20, 120], [260, 120], [260, 360], [540, 360], [540, 170], [820, 170], [820, 430]],
+        "build_spots": [[150, 250], [400, 260], [400, 460], [690, 90], [700, 300]],
+        "building": {"x": 890, "y": 430, "lives": 3, "name_de": "Archiv"},
+        "budget": 200,
+        "supplies": ["power"],
+        # Correct play: cut the power (handles the electrical fault cleanly, no water on
+        # the records) + an ordinary extinguisher (water/foam/powder) on the burning
+        # books. Water on the LIVE wiring is wrong (Anton warns: cut the power first).
+        "waves": [
+            {"gap": 1.3, "fires": ["electrical", "A", "electrical"]},
+            {"gap": 1.2, "fires": ["A", "electrical", "A"]},
+            {"gap": 1.1, "fires": ["electrical", "A", "electrical"]},
+        ],
+    },
+    {
+        # Campaign mission 4 (ITEM-027) — NEW. The anniversary festival stage.
+        # Teaches the design brief's classes — flammable liquids (Class B) and
+        # electrical near the stage — PLUS the relocated burning-metal fire: a modern
+        # lithium power-pack / e-scooter battery among the stage gear is a Class D
+        # (metals) fire per the reference (examples include Lithium). Water is dangerous
+        # on ALL three, so an all-water defence loses hard. The firework is story
+        # dressing only (ANTON["missions"]["feuerwerk"]); there is NO invented
+        # "firework" fire class.
+        # Correct play: CO₂ on the fuel + wiring (B, electrical) + the metal powder on
+        # the battery (D). No single tool clears all three: CO₂/powder leak the battery,
+        # metal powder leaks the fuel/wiring, wet chemical/foam are dangerous, water is
+        # dangerous everywhere — so the "no single tool wins" guard holds.
+        "key": "feuerwerk",
+        "campaign": True,
+        "mission": 4,
+        "name": "Das Jubiläumsfeuerwerk in Gefahr",
+        "place_de": "Die Festbühne beim Jubiläumsfest",
+        "size": {"w": 960, "h": 540},
+        "path": [[20, 200], [220, 200], [220, 430], [500, 430], [500, 150], [760, 150], [760, 400]],
+        "build_spots": [[120, 320], [360, 300], [360, 100], [640, 280], [690, 60]],
+        "building": {"x": 840, "y": 400, "lives": 3, "name_de": "Festbühne"},
+        "budget": 300,
+        "waves": [
+            {"gap": 1.3, "fires": ["B", "B", "electrical"]},
+            {"gap": 1.2, "fires": ["electrical", "D", "B", "D"]},
+            {"gap": 1.1, "fires": ["D", "electrical", "D", "electrical"]},
         ],
     },
 ]
@@ -726,6 +921,24 @@ def get_level(index: int) -> dict | None:
     return LEVELS[index] if 0 <= index < len(LEVELS) else None
 
 
+def level_by_key(key: str) -> dict | None:
+    """Find a level by its stable key (e.g. 'fachwerk', 'bibliothek'). Used so the
+    checks and campaign logic don't depend on a level's position in the list."""
+    return next((lv for lv in LEVELS if lv.get("key") == key), None)
+
+
+def campaign_missions() -> list:
+    """The story missions in play order (by mission number), each as
+    {index, key, name, mission}. The side/training level is excluded."""
+    out = [
+        {"index": i, "key": lv.get("key"), "name": lv["name"], "mission": lv.get("mission")}
+        for i, lv in enumerate(LEVELS)
+        if lv.get("campaign") and lv.get("mission")
+    ]
+    out.sort(key=lambda m: m["mission"])
+    return out
+
+
 def _path_length(waypoints: list) -> float:
     total = 0.0
     for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
@@ -777,11 +990,23 @@ def level_json(index: int) -> dict | None:
         # doesn't re-derive it (keeps one source of truth — a retro learning).
         "schedule": build_schedule(lv),
         "waves": lv.get("waves", []),
+        # Campaign metadata (ITEM-027) + Anton's per-mission framing (ITEM-026/027).
+        "key": lv.get("key"),
+        "campaign": bool(lv.get("campaign")),
+        "mission": lv.get("mission"),
+        "anton": mission_lines_de(lv.get("key", "")),
     }
 
 
 def levels_index() -> list:
-    return [{"index": i, "name": lv["name"]} for i, lv in enumerate(LEVELS)]
+    """The level list for the switcher, with campaign metadata so the browser can
+    show the four story missions in order (and gate them) and keep the training
+    level as a free-choice side level (ITEM-027)."""
+    return [
+        {"index": i, "name": lv["name"], "key": lv.get("key"),
+         "campaign": bool(lv.get("campaign")), "mission": lv.get("mission")}
+        for i, lv in enumerate(LEVELS)
+    ]
 
 
 def _point_segment_distance(px, py, ax, ay, bx, by) -> float:
@@ -815,6 +1040,83 @@ def check_levels() -> tuple[bool, list]:
                     f"Level {i + 1} ('{lv['name']}') build spot {j} at ({x},{y}) is only "
                     f"{d:.0f}px from the path (need >= {BUILD_SPOT_CLEARANCE:.0f}) — it overlaps the road."
                 )
+    return (len(problems) == 0, problems)
+
+
+# Distinctive German substrings that name each tool, used to guard Anton's free
+# prose (ITEM-026). "metal" is checked before "powder" and its matches are blanked
+# out first, because "Pulver" is a substring of "Metallbrandpulver". Wet chemical is
+# matched only as the full extinguisher name, so the fire word "Fettbrand" never
+# counts as naming the tool.
+TOOL_KEYWORDS = [
+    ("co2", ["CO₂", "Kohlendioxid"]),
+    ("wetchem", ["Fettbrandlöscher"]),
+    ("foam", ["Schaum"]),
+    ("water", ["Wasser"]),
+    ("metal", ["Metallbrandpulver", "Metallpulver", "Metallbrand"]),
+    ("powder", ["ABC-Pulver", "Pulver"]),
+]
+# German negation cues: a hint clause that names a tool alongside one of these is a
+# warning ("never water"), not a recommendation to use it.
+NEGATION_CUES = ["kein", "nie", "nicht", "ohne", "statt", "weg von"]
+
+
+def check_narration() -> tuple[bool, list]:
+    """Guard Anton's free prose (ITEM-026). The fire-tool matrix is already checked
+    against the reference; his anecdotes and hints are prose the matrix can't cover.
+
+    The rule: a mission's in-play HINT must never name a tool that is DANGEROUS on one
+    of that mission's fires as the thing to USE. A tool named in a hint clause that has
+    no negation cue is treated as a recommendation and must be (a) a correct ('good')
+    tool for at least one of the mission's fire classes and (b) never 'danger' for any
+    of them. Dangerous tools may still appear in the hint under a warning ("nie Wasser").
+    Framework-free, so it runs with --check-content."""
+    problems: list[str] = []
+    import re
+
+    for lv in LEVELS:
+        if not lv.get("campaign"):
+            continue
+        key = lv.get("key", "")
+        hint = anton_de(("missions", key, "hint"))
+        if not hint:
+            problems.append(f"Campaign mission '{key}' is missing Anton's in-play hint.")
+            continue
+        classes = set()
+        for w in lv.get("waves", []):
+            classes.update(w.get("fires", []))
+        danger_tools = {tid for cid in classes for tid in (t["id"] for t in TOOLS)
+                        if MATRIX.get(cid, {}).get(tid) == "danger"}
+        good_tools = {tid for cid in classes for tid in (t["id"] for t in TOOLS)
+                      if MATRIX.get(cid, {}).get(tid) == "good"}
+
+        # Split into small clauses so a warning cue only excuses its own clause.
+        for clause in re.split(r"[,.;:!?—\n]", hint):
+            if not clause.strip():
+                continue
+            negated = any(cue in clause.lower() for cue in NEGATION_CUES)
+            work = clause
+            for tid, keywords in TOOL_KEYWORDS:
+                named = any(kw in work for kw in keywords)
+                if not named:
+                    continue
+                # Blank this tool's matched words so later tools (e.g. "Pulver" inside
+                # "Metallbrandpulver") don't get a false positive.
+                for kw in keywords:
+                    work = work.replace(kw, " ")
+                if negated:
+                    continue  # a warning, not a recommendation — allowed
+                if tid in danger_tools:
+                    problems.append(
+                        f"Mission '{key}' hint recommends {tid}, which is DANGEROUS on one "
+                        f"of this mission's fires — Anton must never point to a dangerous tool. "
+                        f"Clause: \"{clause.strip()}\""
+                    )
+                elif tid not in good_tools:
+                    problems.append(
+                        f"Mission '{key}' hint recommends {tid}, which is not a correct tool "
+                        f"for any of this mission's fires. Clause: \"{clause.strip()}\""
+                    )
     return (len(problems) == 0, problems)
 
 
@@ -922,6 +1224,47 @@ def behaviour_check() -> tuple[bool, list]:
                 "The second level should be won by a correct mix (powder + wet-chemical) "
                 f"with nothing leaking, but got status={r['status']}, {r['leaked']} leaked."
             )
+
+    # --- ITEM-027: each NEW story mission is only won by safe, correct play. ------
+    # For every campaign mission we assert: (1) the intended correct play wins with
+    # nothing leaking, (2) doing nothing loses, and (3) an all-water defence loses.
+    # No single lazy tool can win any level — that is proved for ALL levels (new ones
+    # included) by the ITEM-017 loop above, so it isn't repeated here.
+    #
+    # correct_play maps a mission key to (placements, supplies-to-cut):
+    #   bibliothek: CUT THE POWER (clean, no water on the records) + water on the
+    #               burning books (Class A). Water on the live wiring is wrong.
+    #   feuerwerk:  CO₂ on the fuel + wiring (B/electrical) + metal powder on the battery (D).
+    correct_play = {
+        "bibliothek": ([(0, "water"), (2, "water")], ("power",)),
+        "feuerwerk": ([(0, "co2"), (1, "metal")], ()),
+    }
+    for key, (placements, cut) in correct_play.items():
+        lv = level_by_key(key)
+        if lv is None:
+            problems.append(f"Campaign mission '{key}' is missing.")
+            continue
+        r = _play_out(lv, placements, cut=cut)
+        if r["status"] != "won" or r["leaked"] != 0:
+            problems.append(
+                f"Mission '{key}' should be won by the correct actions with nothing leaking, "
+                f"but got status={r['status']}, {r['leaked']} leaked."
+            )
+        if _play_out(lv, [])["status"] != "lost":
+            problems.append(f"Doing nothing should lose mission '{key}', but it didn't.")
+        n = len(lv.get("build_spots", []))
+        # All-water with NO supply cut (the lazy/unsafe case) must lose. For the
+        # library this also proves you can't skip cutting the power.
+        if _play_out(lv, [(i, "water") for i in range(n)])["status"] != "lost":
+            problems.append(
+                f"An all-water defence should lose mission '{key}' (water is dangerous there), "
+                "but it didn't."
+            )
+
+    # --- ITEM-026: Anton's mission hints never point to a dangerous tool. ---------
+    ok_narr, narr_problems = check_narration()
+    if not ok_narr:
+        problems.extend(narr_problems)
 
     return (len(problems) == 0, problems)
 
@@ -1035,8 +1378,10 @@ GAME_HTML = """<!DOCTYPE html>
       <h2 id="recapTitle" style="margin:.2rem 0; text-align:center;"></h2>
       <p id="recapScore" style="text-align:center; font-size:1.15rem; font-weight:600; margin:.3rem 0;"></p>
       <p id="recapLine" style="text-align:center; color:#9a6a4f; margin:.2rem 0 .8rem;"></p>
+      <p id="recapAnton" style="text-align:center; font-style:italic; color:#7c2d12; margin:.2rem 0 .8rem; line-height:1.5;"></p>
       <div id="recapClasses" style="font-size:.9rem;"></div>
-      <div style="text-align:center; margin-top:1rem; display:flex; gap:.5rem; justify-content:center;">
+      <div style="text-align:center; margin-top:1rem; display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap;">
+        <button id="recapNext" class="active" style="display:none;">Nächster Einsatz ▶</button>
         <button id="recapAgain">Neu starten</button>
         <button id="recapLib">Antons Wissen</button>
       </div>
@@ -1098,6 +1443,41 @@ GAME_HTML = """<!DOCTYPE html>
     var sprays = [];        // brief tower->fire lines to draw: {x1,y1,x2,y2,until}
     var game = null;        // running game state, or null before start
     var last = 0;
+    // --- Anton-as-narrator + campaign state (ITEM-026 / ITEM-027) ---
+    var antonLines = {};    // the loaded level's per-mission framing (open/anecdote/hint/close/bonus)
+    var missionKey = null;  // stable level key, e.g. 'fachwerk'
+    var missionNo = null;   // story mission number (1..4), or null for the side/training level
+    var isCampaign = false; // true for the four story missions
+    var hintShown = false;  // Anton's single in-play whisper per game (calm pacing)
+    var levelsMeta = [];    // /api/levels list, with campaign metadata
+    var currentIndex = -1;  // index of the level currently loaded
+    var campaignProgress = 0; // highest story mission completed (persisted in the browser)
+
+    // Progress is stored in the browser so the fixed play order survives a reload.
+    // Storage is optional — a browser that blocks it must never crash the page.
+    function loadProgress(){
+      try { var v = window.localStorage.getItem('fd_campaign_progress');
+            campaignProgress = v ? (parseInt(v,10)||0) : 0; }
+      catch (e) { campaignProgress = 0; }
+    }
+    function saveProgress(){
+      try { window.localStorage.setItem('fd_campaign_progress', String(campaignProgress)); }
+      catch (e) { /* storage unavailable — keep progress in memory only */ }
+    }
+    // Mission N is playable once the mission before it is won (mission 1 always is).
+    function missionUnlocked(n){ return n <= campaignProgress + 1; }
+    // Start the campaign over: clear saved progress and return to the locked state
+    // with only mission 1 available. Storage clearing is guarded so it can't throw.
+    function resetProgress(){
+      if (typeof window.confirm === 'function' &&
+          !window.confirm('Kampagne wirklich von vorne beginnen? Der Fortschritt wird gelöscht.')) return;
+      campaignProgress = 0;
+      try { window.localStorage.removeItem('fd_campaign_progress'); } catch (e) { /* storage off — ignore */ }
+      renderLevelBar();
+      var camp=levelsMeta.filter(function(l){ return l.campaign && l.mission; })
+                         .slice().sort(function(a,b){ return a.mission-b.mission; });
+      loadLevel(camp.length ? camp[0].index : 0);
+    }
 
     function pathLength(wp) {
       var t = 0;
@@ -1194,6 +1574,34 @@ GAME_HTML = """<!DOCTYPE html>
       });
       document.getElementById('recapClasses').innerHTML =
         '<div style="color:#9a6a4f; margin-bottom:.2rem;">Diese Feuer kamen vor:</div>' + rows;
+
+      // Anton closes the mission, notes the rescue bonus, and advances the campaign.
+      var antonEl=document.getElementById('recapAnton');
+      var nextBtn=document.getElementById('recapNext');
+      antonEl.textContent=''; nextBtn.style.display='none';
+      if (game.status==='won' && isCampaign && missionNo && missionNo>campaignProgress){
+        campaignProgress = missionNo; saveProgress(); renderLevelBar();
+      }
+      if (isCampaign && antonLines){
+        var msg = '';
+        if (game.status==='won'){
+          msg = antonLines.close || '';
+          if (game.leaked===0 && antonLines.bonus) msg += (msg ? '  ' : '') + '⭐ ' + antonLines.bonus;
+        } else {
+          // Never scold: a gentle, encouraging word on a loss.
+          msg = 'Kein Grund zu hadern — beim nächsten Mal schaffen wir das zusammen.';
+        }
+        if (msg) antonEl.textContent = '👻 ' + msg;
+        if (game.status==='won' && missionNo){
+          var nxt=null;
+          levelsMeta.forEach(function(l){ if (l.campaign && l.mission===missionNo+1) nxt=l; });
+          if (nxt && missionUnlocked(nxt.mission)){
+            nextBtn.style.display='';
+            nextBtn.textContent='Nächster Einsatz ▶';
+            nextBtn.onclick=function(){ document.getElementById('recap').style.display='none'; loadLevel(nxt.index); };
+          }
+        }
+      }
       document.getElementById('recap').style.display='flex';
     }
 
@@ -1301,7 +1709,9 @@ GAME_HTML = """<!DOCTYPE html>
     function onStartButton(){
       if (!game) return;
       if (game.status==='idle'){ game.status='playing'; last=performance.now(); }
-      else if (game.status==='won' || game.status==='lost'){ game=newGame(level); sprays=[]; }
+      else if (game.status==='won' || game.status==='lost'){
+        game=newGame(level); sprays=[]; hintShown=false; seen={}; prevStatus='idle';
+      }
       updateControls(); updateBudget();
     }
 
@@ -1434,6 +1844,22 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.fillRect(-13,-2,26,5); ctx.beginPath(); ctx.arc(0,0,8,Math.PI,0); ctx.fill(); ctx.restore();
       ctx.restore();
     }
+    // Anton "senses" the trouble and marks the spot where fire will break out
+    // (ITEM-026): a gentle pulsing ring at the start of the path with a small note,
+    // shown before the operation begins. Simple shapes in the game's own art style.
+    function drawSense(wp){
+      if (!wp || !wp.length) return;
+      var now=performance.now();
+      var x=wp[0][0], y=wp[0][1];
+      var r=24 + Math.sin(now/300)*6;
+      ctx.save();
+      ctx.strokeStyle='rgba(180,83,9,.55)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x,y,r*0.55,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#b45309'; ctx.font='12px system-ui'; ctx.textAlign='left';
+      ctx.fillText('👻 Anton wittert hier Rauch', x+r+4, y-2);
+      ctx.restore();
+    }
 
     function render(){
       if (!level) return;
@@ -1442,6 +1868,8 @@ GAME_HTML = """<!DOCTYPE html>
       drawPath(level.path);
       level.build_spots.forEach(function(s, idx){ var tw=towerAt(idx); if (tw) drawTower(tw); else drawBuildSpot(s[0],s[1]); });
       drawStart(level.path);
+      // Before the operation starts, Anton marks where fire will break out.
+      if (!game || game.status==='idle') drawSense(level.path);
       drawBuilding(level.building);
       drawAnton();
       if (game){
@@ -1469,6 +1897,24 @@ GAME_HTML = """<!DOCTYPE html>
       document.getElementById('cardText').textContent = c.card_de || '';
       document.getElementById('card').style.display = 'flex';
     }
+    // Anton opens a story mission (ITEM-026/027): he senses the trouble and tells a
+    // short Königstein anecdote. One calm card at the start — reuses the existing
+    // card modal + toggle, so it can be turned off and doesn't stack extra pauses.
+    function showMissionIntro(){
+      if (!cardsEnabled || !isCampaign || !antonLines || !antonLines.open) return;
+      document.getElementById('cardIcon').textContent = '👻';
+      document.getElementById('cardTitle').textContent =
+        (missionNo ? ('Einsatz ' + missionNo + ' · ') : '') + (level ? level.name : '');
+      var el=document.getElementById('cardText'); el.textContent='';
+      var parts=[antonLines.open];
+      if (antonLines.anecdote) parts.push(antonLines.anecdote);
+      parts.forEach(function(p, idx){
+        if (idx>0){ el.appendChild(document.createElement('br')); el.appendChild(document.createElement('br')); }
+        el.appendChild(document.createTextNode(p));
+      });
+      document.getElementById('card').style.display='flex';
+      paused=true;
+    }
     function maybeShowCard(){
       if (!cardsEnabled || !game) return;
       for (var i=0;i<game.fires.length;i++){
@@ -1480,7 +1926,15 @@ GAME_HTML = """<!DOCTYPE html>
     var prevStatus='idle';
     function frame(now){
       var dt = Math.min((now - last)/1000, 0.05); last = now;
-      if (game && game.status==='playing' && !paused){ advance(dt); maybeShowCard(); }
+      if (game && game.status==='playing' && !paused){
+        advance(dt); maybeShowCard();
+        // Anton whispers ONE light, safe tactical hint a moment into the operation.
+        if (!hintShown && antonLines && antonLines.hint && game.elapsed > 2.5){
+          showFeedback(antonLines.hint, 'ok');
+          feedbackUntil = performance.now() + 6500;  // give the hint a little longer
+          hintShown = true;
+        }
+      }
       if (performance.now() > feedbackUntil) document.getElementById('feedback').textContent='';
       render();
       if (game && game.status!==prevStatus){
@@ -1495,17 +1949,18 @@ GAME_HTML = """<!DOCTYPE html>
       fetch('/api/level/'+i).then(function(r){return r.json();}).then(function(data){
         if (data.error) return;
         level = data; game = newGame(level); sprays = []; prevStatus='idle';
-        seen = {}; paused = false;
+        seen = {}; paused = false; hintShown = false; currentIndex = i;
+        antonLines = data.anton || {};
+        missionKey = data.key; missionNo = data.mission; isCampaign = !!data.campaign;
         document.getElementById('card').style.display = 'none';
         document.getElementById('recap').style.display = 'none';
         document.getElementById('feedback').textContent = '';
         canvas.width = data.size.w; canvas.height = data.size.h;
         document.getElementById('place').textContent = data.name + ' · ' + data.place_de;
         setLives(data.building.lives);
-        updateControls(); updateBudget();
-        Array.prototype.forEach.call(document.querySelectorAll('#levelBar button'), function(btn, idx){
-          btn.className = (idx===i) ? 'active' : '';
-        });
+        updateControls(); updateBudget(); renderLevelBar();
+        // Anton opens the mission by sensing it and telling his anecdote.
+        showMissionIntro();
       }).catch(function(){ document.getElementById('place').textContent='Einsatz konnte nicht geladen werden.'; });
     }
 
@@ -1537,16 +1992,45 @@ GAME_HTML = """<!DOCTYPE html>
       if (bestI>=0) placeTower(bestI, selectedTool);
     });
 
+    // The level bar shows the four story missions in play order (locked until the
+    // one before is won) plus the training level as a free-choice side level (ITEM-027).
+    function renderLevelBar(){
+      var bar=document.getElementById('levelBar'); if (!bar) return; bar.innerHTML='';
+      var camp=levelsMeta.filter(function(l){ return l.campaign && l.mission; })
+                         .slice().sort(function(a,b){ return a.mission-b.mission; });
+      var side=levelsMeta.filter(function(l){ return !(l.campaign && l.mission); });
+      camp.forEach(function(l){
+        var unlocked=missionUnlocked(l.mission);
+        var btn=document.createElement('button');
+        btn.textContent='M'+l.mission+'. '+l.name + (unlocked ? '' : ' 🔒');
+        btn.disabled=!unlocked;
+        if (!unlocked) btn.title='Zuerst den vorherigen Einsatz gewinnen.';
+        if (l.index===currentIndex) btn.className='active';
+        btn.onclick=function(){ if (missionUnlocked(l.mission)) loadLevel(l.index); };
+        bar.appendChild(btn);
+      });
+      side.forEach(function(l){
+        var btn=document.createElement('button');
+        btn.textContent='Übung: '+l.name;
+        if (l.index===currentIndex) btn.className='active';
+        btn.onclick=function(){ loadLevel(l.index); };
+        bar.appendChild(btn);
+      });
+      // A small, unobtrusive "start over" control (clears saved campaign progress).
+      var reset=document.createElement('button');
+      reset.textContent='↺ Neu beginnen';
+      reset.title='Kampagnen-Fortschritt löschen und wieder bei Einsatz 1 beginnen';
+      reset.style.fontSize='.78rem'; reset.style.opacity='.65';
+      reset.style.borderStyle='dashed'; reset.style.padding='.25rem .6rem';
+      reset.onclick=resetProgress;
+      bar.appendChild(reset);
+    }
     function buildLevelBar(){
       fetch('/api/levels').then(function(r){return r.json();}).then(function(list){
-        var bar=document.getElementById('levelBar');
-        list.forEach(function(lv){
-          var btn=document.createElement('button');
-          btn.textContent=(lv.index+1)+'. '+lv.name;
-          btn.onclick=function(){ loadLevel(lv.index); };
-          bar.appendChild(btn);
-        });
-        loadLevel(0);
+        levelsMeta=list; loadProgress(); renderLevelBar();
+        var camp=levelsMeta.filter(function(l){ return l.campaign && l.mission; })
+                           .slice().sort(function(a,b){ return a.mission-b.mission; });
+        loadLevel(camp.length ? camp[0].index : 0);
       });
     }
 
@@ -1613,57 +2097,64 @@ async def _lifespan(_app):
     yield
 
 
-app = FastAPI(title=APP_TITLE, lifespan=_lifespan)
+def build_app():
+    """Create and return the FastAPI app with all its routes.
 
+    FastAPI is imported here (not at module top level) so importing this module
+    never requires the web framework — the game logic, the content check, and the
+    safe-play simulator all run without it (ITEM-026/027 headless-testing unlock).
+    The routes and their behaviour are identical to before; only their definition
+    moved inside this function.
+    """
+    from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse, JSONResponse
 
-@app.get("/health")
-def health() -> JSONResponse:
-    """A tiny check a person or a hosting provider can hit to confirm it's alive."""
-    return JSONResponse(health_payload())
+    app = FastAPI(title=APP_TITLE, lifespan=_lifespan)
 
+    @app.get("/health")
+    def health() -> JSONResponse:
+        """A tiny check a person or a hosting provider can hit to confirm it's alive."""
+        return JSONResponse(health_payload())
 
-@app.get("/api/levels")
-def api_levels() -> JSONResponse:
-    """The list of levels, for the level switcher."""
-    return JSONResponse(levels_index())
+    @app.get("/api/levels")
+    def api_levels() -> JSONResponse:
+        """The list of levels, for the level switcher."""
+        return JSONResponse(levels_index())
 
+    @app.get("/api/level/{index}")
+    def api_level(index: int) -> JSONResponse:
+        """One level's map data (path, build spots, building, waves) for the browser."""
+        data = level_json(index)
+        if data is None:
+            return JSONResponse({"error": "no such level"}, status_code=404)
+        return JSONResponse(data)
 
-@app.get("/api/level/{index}")
-def api_level(index: int) -> JSONResponse:
-    """One level's map data (path, build spots, building, waves) for the browser."""
-    data = level_json(index)
-    if data is None:
-        return JSONResponse({"error": "no such level"}, status_code=404)
-    return JSONResponse(data)
+    @app.get("/api/classes")
+    def api_classes() -> JSONResponse:
+        """Display info per fire class (icon, colour, letter) for drawing + the legend."""
+        return JSONResponse(classes_display())
 
+    @app.get("/api/tools")
+    def api_tools() -> JSONResponse:
+        """Tool palette info (name, cost, short label, colour) for placing towers."""
+        return JSONResponse(tools_display())
 
-@app.get("/api/classes")
-def api_classes() -> JSONResponse:
-    """Display info per fire class (icon, colour, letter) for drawing + the legend."""
-    return JSONResponse(classes_display())
+    @app.get("/api/matrix")
+    def api_matrix() -> JSONResponse:
+        """The fire-safety matrix from the database (class × tool → outcome). The browser
+        resolves each shot against this — the facts are never hard-coded in the browser."""
+        m = load_matrix()
+        return JSONResponse([
+            {"class": c, "tool": t, "outcome": o, "reason": feedback_reason(c, t)}
+            for (c, t), o in m.items()
+        ])
 
+    @app.get("/", response_class=HTMLResponse)
+    def home() -> str:
+        """The game view — draws the level map with a marker travelling the path."""
+        return render_game_html()
 
-@app.get("/api/tools")
-def api_tools() -> JSONResponse:
-    """Tool palette info (name, cost, short label, colour) for placing towers."""
-    return JSONResponse(tools_display())
-
-
-@app.get("/api/matrix")
-def api_matrix() -> JSONResponse:
-    """The fire-safety matrix from the database (class × tool → outcome). The browser
-    resolves each shot against this — the facts are never hard-coded in the browser."""
-    m = load_matrix()
-    return JSONResponse([
-        {"class": c, "tool": t, "outcome": o, "reason": feedback_reason(c, t)}
-        for (c, t), o in m.items()
-    ])
-
-
-@app.get("/", response_class=HTMLResponse)
-def home() -> str:
-    """The game view — draws the level map with a marker travelling the path."""
-    return render_game_html()
+    return app
 
 
 # --- Run ---------------------------------------------------------------------
@@ -1678,13 +2169,15 @@ if __name__ == "__main__":
         init_db()
         ok1, p1 = check_content()
         ok2, p2 = check_levels()
-        if ok1 and ok2:
+        ok3, p3 = check_narration()   # ITEM-026: guard Anton's mission hints
+        if ok1 and ok2 and ok3:
             nc, nt = content_counts()
             print(f"Checks PASSED — {nc} Brandklassen, {nt} Löschmittel, "
-                  f"{level_count()} Level, alle Prüfungen bestanden.")
+                  f"{level_count()} Level, {len(campaign_missions())} Story-Missionen, "
+                  f"Antons Hinweise geprüft, alle Prüfungen bestanden.")
             sys.exit(0)
         print("Checks FAILED:")
-        for p in p1 + p2:
+        for p in p1 + p2 + p3:
             print("  -", p)
         sys.exit(1)
 
@@ -1706,6 +2199,7 @@ if __name__ == "__main__":
     # Build the database before we start serving, so the very first request works
     # even if the startup event hasn't run yet in some setups.
     init_db()
+    app = build_app()
     print(f"Firefighter Defense läuft auf  http://{HOST}:{PORT}")
     print(f"Datenbank: {DATABASE_PATH}")
     uvicorn.run(app, host=HOST, port=PORT)

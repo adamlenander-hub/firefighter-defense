@@ -697,17 +697,102 @@ def test_second_level_won_by_a_correct_mix():
     assert r["status"] == "won" and r["leaked"] == 0
 
 
-def test_difficulty_grows_by_variety():
-    # A concrete proxy for "the challenge grows gently": each level introduces at
-    # least as many distinct fire classes as the one before it.
-    counts = []
+def test_levels_are_never_trivially_single_class():
+    # Every level teaches at least two distinct fire classes. This is the property
+    # that keeps "only safe play wins" true: a single correct tool can never trivially
+    # clear a whole level, because at least two classes with different right tools
+    # appear. (Superseded the old "distinct-class counts non-decreasing across the
+    # LEVELS array" proxy, which assumed array order = difficulty order — no longer
+    # true once the story campaign orders levels by narrative and the Schlosserei
+    # training level, richest in classes, sits outside the campaign — ITEM-027.)
     for i in range(g.level_count()):
         seen = {ev["class"] for ev in g.build_schedule(g.LEVELS[i])}
-        counts.append(len(seen))
-    assert counts == sorted(counts), f"distinct-class counts should be non-decreasing, got {counts}"
+        assert len(seen) >= 2, f"level {i} ('{g.LEVELS[i]['name']}') teaches only {seen}"
+
+
+def test_campaign_is_in_order_and_stays_gentle():
+    # The four story missions play in order 1..4, and each stays within a small,
+    # learnable band of distinct fire classes (2..4) — the campaign opens and stays
+    # gentle even though it's ordered by story, not by raw mechanical complexity.
+    missions = g.campaign_missions()
+    assert [m["mission"] for m in missions] == [1, 2, 3, 4]
+    for m in missions:
+        seen = {ev["class"] for ev in g.build_schedule(g.LEVELS[m["index"]])}
+        assert 2 <= len(seen) <= 4, f"mission {m['mission']} teaches {seen}"
 
 
 def test_ideal_tool_earns_more_than_an_acceptable_one():
     # Using the ideal ("good") tool is clearly better than a merely-acceptable
     # ("weak") one: it earns the smart-play bonus on top of the base reward.
     assert g.SMART_BONUS > 0
+
+
+# --- ITEM-026 / ITEM-027: Anton as narrator + the four story missions ---------
+
+def test_campaign_has_four_story_missions_in_order():
+    missions = g.campaign_missions()
+    assert [m["mission"] for m in missions] == [1, 2, 3, 4]
+    assert [m["key"] for m in missions] == ["fachwerk", "bibliothek", "kurpark", "feuerwerk"]
+
+
+def test_training_level_is_outside_the_campaign():
+    # The Schlosserei workshop stays available as a side/training level, not a mission.
+    schlosserei = g.level_by_key("schlosserei")
+    assert schlosserei is not None
+    assert not schlosserei.get("campaign")
+    assert schlosserei.get("mission") is None
+
+
+def test_library_mission_is_electrical_among_burning_books():
+    # DECISION (Adam, review): the library is an ELECTRICAL fire (water dangerous)
+    # among ordinary burning books/paper (Class A) — no burning-metal fire here.
+    # The power supply can be cut (the clean, no-water fix that protects the records),
+    # which is also what keeps the "no single tool wins" guard green.
+    lv = g.level_by_key("bibliothek")
+    seen = {ev["class"] for ev in g.build_schedule(lv)}
+    assert seen == {"electrical", "A"}
+    assert "power" in lv.get("supplies", [])      # you must cut the power first
+    assert g.MATRIX["electrical"]["water"] == "danger"
+
+
+def test_firework_mission_teaches_liquids_electrical_and_the_moved_metal_fire():
+    # The brief's classes (B + electrical) plus the relocated burning-metal fire (D).
+    lv = g.level_by_key("feuerwerk")
+    seen = {ev["class"] for ev in g.build_schedule(lv)}
+    assert {"B", "electrical", "D"} <= seen
+    assert seen <= {c["id"] for c in g.FIRE_CLASSES}  # no invented "firework" class
+
+
+def test_burning_metal_fire_is_not_in_the_library():
+    # The Class D (burning-metal) fire moved OUT of the library into the finale.
+    lib = {ev["class"] for ev in g.build_schedule(g.level_by_key("bibliothek"))}
+    assert "D" not in lib
+
+
+def test_new_missions_only_won_by_safe_play():
+    # behaviour_check now plays each new mission; this asserts it stays green.
+    ok, problems = g.behaviour_check()
+    assert ok, "; ".join(problems)
+
+
+def test_every_campaign_mission_has_antons_framing():
+    for m in g.campaign_missions():
+        lines = g.mission_lines_de(m["key"])
+        for field in ("open", "anecdote", "hint", "close"):
+            assert lines.get(field, "").strip(), f"{m['key']} missing Anton's {field}"
+
+
+def test_narration_guard_passes_on_shipped_hints():
+    ok, problems = g.check_narration()
+    assert ok, "; ".join(problems)
+
+
+def test_narration_guard_catches_a_dangerous_recommendation(monkeypatch):
+    # Flip a hint to positively recommend a dangerous tool and confirm it's caught.
+    bad = {k: dict(v) for k, v in g.ANTON["missions"].items()}
+    bad["bibliothek"] = dict(bad["bibliothek"])
+    bad["bibliothek"]["hint"] = g.L("Nimm einfach Wasser auf die alte Leitung.")
+    monkeypatch.setitem(g.ANTON, "missions", bad)
+    ok, problems = g.check_narration()
+    assert not ok
+    assert any("bibliothek" in p and "water" in p for p in problems)
