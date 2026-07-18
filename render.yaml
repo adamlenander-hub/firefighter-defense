@@ -1,0 +1,18 @@
+# Render Blueprint — hosts Firefighter Defense as one free web service.
+# On Render, choose "New → Blueprint" and point it at this repo; Render reads this file.
+#
+# The free plan wipes the disk on every restart/redeploy — which is fine here: the game
+# rebuilds its content database on startup from its own fire-facts source, so nothing
+# needs to survive a restart (decided in ITEM-002). No paid disk or database required.
+
+services:
+  - type: web
+    name: firefighter-defense
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 firefighter_defense.py
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      # PORT is injected by Render automatically; the app reads it from the environment.

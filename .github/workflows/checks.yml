@@ -1,0 +1,38 @@
+# Automatic checks that run on GitHub on every change. This is the same safety net as
+# the local pre-save hook (check.sh), re-run on GitHub's servers so nothing lands on
+# the main branch without passing. It needs no secrets and no internet beyond the
+# public package index.
+
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Node is used to syntax-check the game's browser code inside check.sh.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      # Runs the exact same checks as the local pre-save hook, so the two never drift:
+      # code parses, fire facts match the reference, the first level is only won by
+      # safe play, the browser code parses, and the full test suite passes.
+      - name: Run all checks
+        run: sh check.sh

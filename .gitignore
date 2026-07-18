@@ -1,0 +1,13 @@
+# The SQLite database is built on startup from the app's own content, so it
+# should never be committed — it's regenerated every run.
+*.db
+*.db-journal
+
+# Python bits
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Scratch file the check runner uses to syntax-check the browser code
+.game.check.js

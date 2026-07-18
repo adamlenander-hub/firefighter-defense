@@ -1,0 +1,8 @@
+# Firefighter Defense — Python dependencies for the single-file app.
+# Install with:  pip3 install -r requirements.txt
+#
+# Only these two are needed; everything else (including sqlite3 for the database)
+# is part of Python's standard library.
+
+fastapi
+uvicorn

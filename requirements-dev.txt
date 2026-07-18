@@ -1,0 +1,5 @@
+# Extra dependencies needed only to run the checks/tests (not to play the game).
+# Install with:  pip3 install -r requirements-dev.txt
+
+pytest
+httpx

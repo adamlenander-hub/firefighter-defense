@@ -1,0 +1,22 @@
+#!/bin/sh
+# Pre-save hook for Firefighter Defense — runs the project's checks before every
+# commit. If a check fails, the commit is stopped so a broken change can't be saved
+# by accident.
+#
+# Turn it on once (from this folder):
+#     git config core.hooksPath .githooks
+#
+# To skip it for a single commit on purpose, add --no-verify to your git commit.
+
+echo "Running the game's checks before saving this change..."
+
+if ! sh ./check.sh; then
+  echo ""
+  echo "A check failed. The change was NOT saved."
+  echo "Fix what the check reported above, then commit again."
+  echo "(If you truly need to save anyway, use: git commit --no-verify)"
+  exit 1
+fi
+
+echo "All checks passed. Saving the change."
+exit 0
