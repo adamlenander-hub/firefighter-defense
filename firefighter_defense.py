@@ -187,6 +187,21 @@ CLASS_CARDS = {
 }
 
 
+# --- Supply-hazard mechanic (ITEM-016) ---------------------------------------
+# Some fires can't just be sprayed — the supply feeding them must be cut off first.
+# A level opts in via "supplies": ["gas", "power"]. In such a level, spraying that
+# kind of fire while its supply is on does nothing (Anton says cut the supply first);
+# cutting the supply puts those fires out. Level 1 declares no supplies, so it keeps
+# its original "use the right extinguisher" behaviour for electrical fires.
+HAZARD_CLASS = {"gas": "C", "power": "electrical"}
+HAZARD_ACTION_DE = {"gas": "Gaszufuhr absperren", "power": "Strom abschalten"}
+HAZARD_BUTTON_DE = {"gas": "🔧 Gas absperren", "power": "⚡ Strom abschalten"}
+HAZARD_WARN_DE = {
+    "gas": "Bei Gasbränden zuerst die Gaszufuhr absperren!",
+    "power": "Bei Elektrobränden zuerst den Strom abschalten!",
+}
+
+
 def right_tool_de(class_id: str) -> str:
     """The name of a correct (good) tool for a class, for suggestions. '' if none."""
     row = MATRIX.get(class_id, {})
@@ -194,6 +209,16 @@ def right_tool_de(class_id: str) -> str:
         if row.get(t["id"]) == "good":
             return t["name_de"]
     return ""
+
+
+def right_action_de(class_id: str, supplies=None) -> str:
+    """The correct action for a class, given a level's supply hazards. If the class
+    is fed by a cut-able supply in this level (gas/power), the right action is cutting
+    that supply; otherwise it's the right extinguisher."""
+    for hazard in (supplies or []):
+        if HAZARD_CLASS.get(hazard) == class_id:
+            return HAZARD_ACTION_DE[hazard]
+    return right_tool_de(class_id)
 
 
 def feedback_reason(class_id: str, tool_id: str) -> str | None:
@@ -434,6 +459,27 @@ LEVELS = [
             {"gap": 1.0, "fires": ["B", "electrical", "A", "F"]},
         ],
     },
+    {
+        # ITEM-016: the combined level that introduces the remaining fire types —
+        # flammable liquids (B), gases (C), and burning metals (D) — plus the two
+        # "cut the supply first" lessons. Gas and electrical fires here can ONLY be
+        # dealt with by cutting their supply (see "supplies"); spraying them does
+        # nothing. Liquids need foam or powder; burning metal needs the special metal
+        # powder (everything else is dangerous on metal).
+        "name": "Feuer in der Schlosserei",
+        "place_de": "Die alte Schlosserei am Fuß des Königsteiner Burgbergs",
+        "size": {"w": 960, "h": 540},
+        "path": [[20, 130], [280, 130], [280, 380], [560, 380], [560, 170], [820, 170], [820, 430]],
+        "build_spots": [[150, 60], [380, 270], [700, 90], [720, 300], [430, 470]],
+        "building": {"x": 880, "y": 430, "lives": 3, "name_de": "Werkstatt"},
+        "budget": 320,
+        "supplies": ["gas", "power"],
+        "waves": [
+            {"gap": 1.3, "fires": ["A", "B", "A"]},
+            {"gap": 1.2, "fires": ["C", "B", "electrical"]},
+            {"gap": 1.1, "fires": ["D", "C", "electrical", "D"]},
+        ],
+    },
 ]
 
 # Wave timing + fire speed (ITEM-008). Kept as named dials so they're easy to tune.
@@ -495,6 +541,11 @@ class GameState:
         }
         self.stats = {"extinguished": 0, "useless_hits": 0, "danger_hits": 0}
         self.leaked = 0          # fires that reached the building (ITEM-013)
+        # Supply hazards this level opts into (ITEM-016): each starts "on" and can be
+        # cut off. _gated_class maps a fire class to the hazard that must be cut before
+        # it can be dealt with (gas -> "C", power -> "electrical").
+        self.supplies = {h: "on" for h in level.get("supplies", [])}
+        self._gated_class = {HAZARD_CLASS[h]: h for h in self.supplies if h in HAZARD_CLASS}
 
     def advance(self, dt: float) -> None:
         if self.status != "playing":
@@ -503,7 +554,15 @@ class GameState:
         # Spawn any fires whose time has come.
         while self.spawned < len(self.schedule) and self.schedule[self.spawned]["t"] <= self.elapsed:
             ev = self.schedule[self.spawned]
-            self.fires.append({"id": self._next_id, "class": ev["class"], "progress": 0.0})
+            cls = ev["class"]
+            haz = self._gated_class.get(cls)
+            if haz and self.supplies.get(haz) == "off":
+                # Its supply is already cut, so this fire can't sustain — it never
+                # really starts. Count it as handled (the player did the right thing).
+                self.stats["extinguished"] += 1
+                self.spawned += 1
+                continue
+            self.fires.append({"id": self._next_id, "class": cls, "progress": 0.0})
             self._next_id += 1
             self.spawned += 1
         # Towers fire at the nearest fire in range. The outcome depends on whether the
@@ -517,6 +576,13 @@ class GameState:
             if target is None:
                 continue
             tw["cooldown"] = TOWER_COOLDOWN
+            haz = self._gated_class.get(target["class"])
+            if haz and self.supplies.get(haz) == "on":
+                # The supply is still on: spraying does nothing. The lesson is to cut
+                # the supply first (the browser shows Anton's warning).
+                target["reaction"] = "useless"
+                self.stats["useless_hits"] += 1
+                continue
             outcome = self.matrix.get((target["class"], tw["tool"]))
             if outcome in ("good", "weak"):
                 # Correct (or acceptable) tool: fire goes out, budget earned back;
@@ -582,6 +648,25 @@ class GameState:
         self._next_tower_id += 1
         return (True, "ok")
 
+    def shut_off(self, hazard: str) -> int:
+        """Cut a supply (ITEM-016): 'gas' or 'power'. The fires it was feeding go out,
+        and its fires can no longer be a threat. Returns how many active fires this put
+        out. A no-op if the level doesn't have that hazard or it's already off."""
+        if self.supplies.get(hazard) != "on":
+            return 0
+        self.supplies[hazard] = "off"
+        cls = HAZARD_CLASS.get(hazard)
+        out = [f for f in self.fires if f["class"] == cls]
+        if out:
+            self.fires = [f for f in self.fires if f["class"] != cls]
+            for _ in out:
+                self.stats["extinguished"] += 1
+                self.budget += EXTINGUISH_REWARD
+        # Cutting the last fire mid-level can be the winning move.
+        if self.status == "playing" and self.spawned >= len(self.schedule) and not self.fires:
+            self.status = "won"
+        return len(out)
+
     def _fire_pos(self, fire: dict) -> tuple:
         return path_point_at(self.level["path"], fire["progress"])
 
@@ -612,9 +697,10 @@ class GameState:
         for ev in self.schedule:
             if ev["class"] not in seen_order:
                 seen_order.append(ev["class"])
+        supplies = self.level.get("supplies", [])
         classes = [
             {"id": cid, "name_de": names.get(cid, cid), "icon": icons.get(cid, "🔥"),
-             "right_tool_de": right_tool_de(cid)}
+             "right_tool_de": right_action_de(cid, supplies)}
             for cid in seen_order
         ]
         return {
@@ -681,6 +767,8 @@ def level_json(index: int) -> dict | None:
         "build_spots": lv["build_spots"],
         "building": lv["building"],
         "budget": lv.get("budget", 0),
+        # Which supplies (gas/power) this level lets you cut off (ITEM-016).
+        "supplies": lv.get("supplies", []),
         # The spawn schedule is computed on the server and sent, so the browser
         # doesn't re-derive it (keeps one source of truth — a retro learning).
         "schedule": build_schedule(lv),
@@ -732,10 +820,14 @@ def check_levels() -> tuple[bool, list]:
 # the `--simulate` command, by the pre-save hook, and by CI — so a change that makes
 # the level winnable the wrong way (e.g. by ignoring the cooking-oil fires) is caught.
 
-def _play_out(level: dict, placements: list, dt: float = 1 / 30.0) -> dict:
+def _play_out(level: dict, placements: list, cut=(), dt: float = 1 / 30.0) -> dict:
     """Play a level to the end with a player who buys the given towers (spot, tool)
-    as soon as the budget allows, then reports the recap. Deterministic."""
+    as soon as the budget allows, optionally cutting supplies (gas/power) at the
+    start, then reports the recap. Deterministic."""
     st = GameState(level)
+    st.status = "playing"
+    for hazard in cut:
+        st.shut_off(hazard)
     queue = list(placements)
     t = 0.0
     while st.status == "playing" and t < 180:
@@ -778,6 +870,31 @@ def behaviour_check() -> tuple[bool, list]:
             "Ignoring the cooking-oil fires (an all-powder defence) should lose the "
             f"first level, but got status={r['status']} — the fat-fire lesson can be skipped."
         )
+
+    # --- The combined level with the shut-off mechanic (ITEM-016), if present ---
+    lv2 = next((l for l in LEVELS if l.get("supplies")), None)
+    if lv2 is not None:
+        # Correct play: cut the gas and the power, foam the liquids/ordinary fires,
+        # metal powder for the burning metal → a clean win with nothing leaking.
+        r = _play_out(lv2, [(1, "foam"), (4, "metal")], cut=("gas", "power"))
+        if r["status"] != "won" or r["leaked"] != 0:
+            problems.append(
+                "On the combined level, cutting both supplies and using foam + metal "
+                f"powder should win with nothing leaking, but got status={r['status']}, "
+                f"{r['leaked']} leaked."
+            )
+        # Forgetting to cut the supplies → the gas and electrical fires leak → a loss.
+        r = _play_out(lv2, [(1, "foam"), (4, "metal")], cut=())
+        if r["status"] != "lost":
+            problems.append(
+                "On the combined level, never cutting the gas/power should lose (those "
+                f"fires can't be sprayed out), but got status={r['status']}."
+            )
+        # All-water, even with the supplies cut → still a loss (water is dangerous on
+        # liquids and on burning metal).
+        r = _play_out(lv2, [(i, "water") for i in range(5)], cut=("gas", "power"))
+        if r["status"] != "lost":
+            problems.append("On the combined level, an all-water defence should lose, but it didn't.")
 
     return (len(problems) == 0, problems)
 
@@ -859,6 +976,7 @@ GAME_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="bar" id="toolPalette"></div>
+  <div class="bar" id="hazardControls"></div>
   <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern.</p>
   <p id="feedback" style="min-height:1.3em; font-weight:600; text-align:center; margin:.2rem 0;"></p>
 
@@ -914,6 +1032,28 @@ GAME_HTML = """<!DOCTYPE html>
     var FIRE_PX_PER_SEC = 90.0;
     var TOWER_RANGE = 130.0, TOWER_COOLDOWN = 0.7, EXTINGUISH_REWARD = 12;
     var SMART_BONUS = 6, DANGER_SPEEDUP = 0.10;
+    // Supply-hazard mechanic (ITEM-016), mirroring the server. Kept in step with the
+    // Python HAZARD_* constants.
+    var HAZARD_CLASS = {gas: 'C', power: 'electrical'};
+    var HAZARD_ACTION = {gas: 'Gaszufuhr absperren', power: 'Strom abschalten'};
+    var HAZARD_BUTTON = {gas: '🔧 Gas absperren', power: '⚡ Strom abschalten'};
+    var HAZARD_WARN = {gas: 'Bei Gasbränden zuerst die Gaszufuhr absperren!',
+                       power: 'Bei Elektrobränden zuerst den Strom abschalten!'};
+    function gatedHazardFor(cls){
+      if (!level || !level.supplies) return null;
+      for (var i=0;i<level.supplies.length;i++){ if (HAZARD_CLASS[level.supplies[i]]===cls) return level.supplies[i]; }
+      return null;
+    }
+    // Which hazard (if any) feeds this class, among a running game's supplies.
+    function HAZARD_CLASS_OF_IN(g, cls){
+      for (var h in g.supplies){ if (Object.prototype.hasOwnProperty.call(g.supplies,h) && HAZARD_CLASS[h]===cls) return h; }
+      return null;
+    }
+    function rightActionFor(cid){
+      var h=gatedHazardFor(cid);
+      if (h) return HAZARD_ACTION[h];
+      var c=classMap[cid]||{}; return c.right_tool_de||'';
+    }
 
     var canvas = document.getElementById('board');
     var ctx = canvas.getContext('2d');
@@ -1023,7 +1163,7 @@ GAME_HTML = """<!DOCTYPE html>
         rows += '<div style="display:flex; align-items:center; gap:.5rem; padding:.25rem 0; border-top:1px solid #f0e6da;">' +
                 '<span style="font-size:1.3rem;">'+(c.icon||'🔥')+'</span>' +
                 '<span style="flex:1;">'+(c.name_de||ev['class'])+'</span>' +
-                '<span style="color:#15803d;">Richtig: '+(c.right_tool_de||'')+'</span></div>';
+                '<span style="color:#15803d;">Richtig: '+(rightActionFor(ev['class'])||'')+'</span></div>';
       });
       document.getElementById('recapClasses').innerHTML =
         '<div style="color:#9a6a4f; margin-bottom:.2rem;">Diese Feuer kamen vor:</div>' + rows;
@@ -1068,7 +1208,13 @@ GAME_HTML = """<!DOCTYPE html>
       g.elapsed += dt;
       // spawn (schedule comes from the server; key is "class")
       while (g.spawned < g.schedule.length && g.schedule[g.spawned].t <= g.elapsed){
-        g.fires.push({id:g.nextId++, cls:g.schedule[g.spawned]["class"], progress:0}); g.spawned++;
+        var scls = g.schedule[g.spawned]["class"];
+        var shaz = HAZARD_CLASS_OF_IN(g, scls);
+        if (shaz && g.supplies[shaz]==='off'){
+          // its supply is already cut — this fire never really starts (counted handled)
+          g.ext++; g.spawned++; continue;
+        }
+        g.fires.push({id:g.nextId++, cls:scls, progress:0}); g.spawned++;
       }
       // towers fire at the nearest fire in range; the outcome depends on the matrix
       for (var ti=0; ti<g.towers.length; ti++){
@@ -1079,6 +1225,14 @@ GAME_HTML = """<!DOCTYPE html>
         tw.cooldown = TOWER_COOLDOWN;
         var tp=firePos(target);
         sprays.push({x1:tw.spot[0], y1:tw.spot[1], x2:tp[0], y2:tp[1], until:performance.now()+120});
+        var thaz = HAZARD_CLASS_OF_IN(g, target.cls);
+        if (thaz && g.supplies[thaz]==='on'){
+          // supply still on: spraying does nothing — cut the supply first
+          target.reaction='useless'; target.reactionUntil=performance.now()+500;
+          showFeedback(HAZARD_WARN[thaz], 'danger');
+          g.useless++;
+          continue;
+        }
         var outcome = matrixMap[target.cls + '|' + tw.tool];
         if (outcome==='good' || outcome==='weak'){
           g.fires = g.fires.filter(function(f){ return f.id!==target.id; });
@@ -1109,12 +1263,13 @@ GAME_HTML = """<!DOCTYPE html>
     // A fresh game for a level: 'idle' until "Einsatz starten". Towers can be
     // placed while idle (build first) and while playing.
     function newGame(lv){
+      var sup={}; (lv.supplies||[]).forEach(function(h){ sup[h]='on'; });
       return { level:lv, schedule:(lv.schedule||[]),
                speed: FIRE_PX_PER_SEC / pathLength(lv.path),
                lives: lv.building.lives, budget: lv.budget||0,
                elapsed:0, spawned:0, fires:[], nextId:0,
                towers:[], nextTowerId:0, status:'idle', flashUntil:0,
-               ext:0, danger:0, useless:0, leaked:0 };
+               ext:0, danger:0, useless:0, leaked:0, supplies:sup };
     }
     function onStartButton(){
       if (!game) return;
@@ -1139,6 +1294,39 @@ GAME_HTML = """<!DOCTYPE html>
       game.towers.push({id:game.nextTowerId++, spot_index:spotIndex, spot:spots[spotIndex], tool:toolId, cooldown:0});
       updateBudget();
       return true;
+    }
+
+    // Cut a supply (ITEM-016): puts out the fires it fed and stops them being a threat.
+    function shutOff(hazard){
+      var g=game; if (!g || !g.supplies || g.supplies[hazard]!=='on') return;
+      if (g.status==='won' || g.status==='lost') return;
+      g.supplies[hazard]='off';
+      var cls=HAZARD_CLASS[hazard];
+      var out=g.fires.filter(function(f){ return f.cls===cls; });
+      if (out.length){
+        g.fires=g.fires.filter(function(f){ return f.cls!==cls; });
+        for (var i=0;i<out.length;i++){ g.ext++; g.budget+=EXTINGUISH_REWARD; }
+        updateBudget();
+      }
+      if (g.status==='playing' && g.spawned>=g.schedule.length && g.fires.length===0){ g.status='won'; }
+      showFeedback(hazard==='gas' ? 'Gaszufuhr abgesperrt — gut!' : 'Strom abgeschaltet — gut!', 'ok');
+      renderHazardControls();
+    }
+
+    // The "cut the supply" buttons a level offers (only the hazards it declares).
+    function renderHazardControls(){
+      var bar=document.getElementById('hazardControls'); if (!bar) return;
+      bar.innerHTML='';
+      var sup=(level && level.supplies) || [];
+      sup.forEach(function(h){
+        var btn=document.createElement('button');
+        var off = game && game.supplies && game.supplies[h]==='off';
+        var over = game && (game.status==='won' || game.status==='lost');
+        btn.textContent = HAZARD_BUTTON[h] + (off ? ' ✓' : '');
+        btn.disabled = off || over;
+        btn.onclick = function(){ shutOff(h); };
+        bar.appendChild(btn);
+      });
     }
 
     function updateBudget(){
@@ -1184,6 +1372,7 @@ GAME_HTML = """<!DOCTYPE html>
       if (!game || game.status==='idle'){ btn.textContent='Einsatz starten'; btn.disabled=false; }
       else if (game.status==='playing'){ btn.textContent='Läuft …'; btn.disabled=true; }
       else { btn.textContent='Neu starten'; btn.disabled=false; }
+      renderHazardControls();
     }
 
     function drawTree(x,y){ ctx.fillStyle='#6aa84f'; ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#7a5230'; ctx.fillRect(x-4,y+16,8,16); }

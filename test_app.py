@@ -573,3 +573,88 @@ def test_level0_has_the_three_taught_classes():
 def test_behaviour_check_passes_on_the_shipped_level():
     ok, problems = g.behaviour_check()
     assert ok, "the shipped first level should only be won by safe play: " + "; ".join(problems)
+
+
+# --- ITEM-016: the combined level + the gas/power shut-off mechanic -----------
+
+def test_combined_level_exists_and_declares_supplies():
+    lv2 = next((l for l in g.LEVELS if l.get("supplies")), None)
+    assert lv2 is not None, "expected a level that declares supply hazards"
+    assert set(lv2["supplies"]) == {"gas", "power"}
+    seen = {ev["class"] for ev in g.build_schedule(lv2)}
+    assert {"B", "C", "D"} <= seen, "combined level should teach liquids, gases, metals"
+
+
+def test_gas_fire_ignores_spraying_until_the_supply_is_cut():
+    lv = _mini_level(budget=1000, building={"x": 400, "y": 0, "lives": 9, "name_de": "X"},
+                     supplies=["gas"], waves=[{"gap": 0.5, "fires": ["C"]}])
+    gs = g.GameState(lv)
+    gs.place_tower(0, "powder")            # powder is normally correct for gas
+    for _ in range(60):
+        gs.advance(0.1)
+        if not gs.fires and gs.spawned:
+            break
+    # While the supply is on, spraying does nothing: no extinguish, at least one wasted shot.
+    assert gs.stats["extinguished"] == 0
+    assert gs.stats["useless_hits"] >= 1
+
+
+def test_shutting_off_the_supply_puts_out_its_fires():
+    lv = _mini_level(budget=0, building={"x": 400, "y": 0, "lives": 9, "name_de": "X"},
+                     supplies=["gas"], waves=[{"gap": 0.5, "fires": ["C", "C"]}])
+    gs = g.GameState(lv)
+    for _ in range(25):                     # let both gas fires appear
+        gs.advance(0.1)
+    assert any(f["class"] == "C" for f in gs.fires)
+    n = gs.shut_off("gas")
+    assert n >= 1
+    assert not any(f["class"] == "C" for f in gs.fires), "cutting the gas should clear gas fires"
+    # A fire that spawns after the supply is cut never becomes a threat.
+    assert gs.supplies["gas"] == "off"
+
+
+def test_power_fire_needs_the_power_cut():
+    lv = _mini_level(budget=1000, building={"x": 400, "y": 0, "lives": 9, "name_de": "X"},
+                     supplies=["power"], waves=[{"gap": 0.5, "fires": ["electrical"]}])
+    gs = g.GameState(lv)
+    gs.place_tower(0, "co2")               # co2 is normally correct for electrical
+    for _ in range(30):
+        gs.advance(0.1)
+    assert gs.stats["extinguished"] == 0   # spraying live electrical does nothing here
+    gs.shut_off("power")
+    assert not any(f["class"] == "electrical" for f in gs.fires)
+
+
+def test_level1_electrical_still_works_without_a_power_switch():
+    # Regression: the first level declares no supplies, so electrical is handled by
+    # the right extinguisher exactly as before (the shut-off mechanic is opt-in).
+    assert not g.LEVELS[0].get("supplies")
+    lv = _mini_level(budget=1000, building={"x": 400, "y": 0, "lives": 9, "name_de": "X"},
+                     waves=[{"gap": 0.5, "fires": ["electrical"]}])
+    gs = g.GameState(lv)
+    gs.place_tower(0, "co2")
+    for _ in range(30):
+        gs.advance(0.1)
+        if not gs.fires and gs.spawned:
+            break
+    assert gs.stats["extinguished"] == 1   # co2 puts out electrical when there's no switch
+
+
+def test_recap_right_action_uses_the_shut_off_for_gated_classes():
+    lv2 = next(l for l in g.LEVELS if l.get("supplies"))
+    r = g.GameState(lv2).recap()
+    by_id = {c["id"]: c for c in r["classes"]}
+    assert by_id["C"]["right_tool_de"] == g.HAZARD_ACTION_DE["gas"]
+    assert by_id["electrical"]["right_tool_de"] == g.HAZARD_ACTION_DE["power"]
+
+
+def test_burning_metal_only_yields_to_metal_powder():
+    lv = _mini_level(budget=1000, building={"x": 400, "y": 0, "lives": 2, "name_de": "X"},
+                     waves=[{"gap": 0.5, "fires": ["D", "D", "D"]}])
+    gs = g.GameState(lv)
+    gs.place_tower(0, "water"); gs.place_tower(1, "water")   # water is dangerous on metal
+    for _ in range(300):
+        gs.advance(0.1)
+        if gs.status != "playing":
+            break
+    assert gs.status == "lost"
