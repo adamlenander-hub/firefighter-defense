@@ -167,5 +167,27 @@ def try_level2():
               f"leaked={r['leaked']}  mistakes={r['mistakes']}  budget_left={r['budget_left']}  towers={r['towers']}")
 
 
+def probe_all_levels():
+    """ITEM-017 loophole probe: for every level, run single-tool spam and no-towers
+    (no supplies cut — the unsafe/lazy cases) and confirm they LOSE, plus report the
+    intended safe strategy. Flags any unsafe strategy that currently WINS."""
+    tools = [t["id"] for t in g.TOOLS]
+    for i in range(g.level_count()):
+        lv = g.LEVELS[i]
+        n = len(lv["build_spots"])
+        print(f"\n=== LEVEL {i} '{lv['name']}' | lives={lv['building']['lives']} "
+              f"budget={lv['budget']} | classes={class_counts(lv)} | "
+              f"supplies={lv.get('supplies', [])} ===")
+        # single-tool spam, placed on all affordable spots, no supplies cut
+        for tool in tools:
+            r = run(lv, [(s, tool) for s in range(n)], incremental=True)
+            flag = "  <-- WINS (loophole!)" if r.get("status") == "won" else ""
+            print(f"    spam {tool:8s} -> {r.get('status','?'):4s}  "
+                  f"know={r.get('knowledge','?')}%  leaked={r.get('leaked','?')}{flag}")
+        r = run(lv, [], incremental=True)
+        print(f"    no towers      -> {r['status']:4s}  leaked={r['leaked']}"
+              + ("  <-- WINS (loophole!)" if r["status"] == "won" else ""))
+
+
 if __name__ == "__main__":
-    try_level2()
+    probe_all_levels()

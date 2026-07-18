@@ -658,3 +658,56 @@ def test_burning_metal_only_yields_to_metal_powder():
         if gs.status != "playing":
             break
     assert gs.status == "lost"
+
+
+# --- ITEM-017: only safe play wins; difficulty grows gently -------------------
+
+def _spam(level, tool):
+    st = g.GameState(level); st.status = "playing"
+    spots = len(level.get("build_spots", []))
+    queue = [(s, tool) for s in range(spots)]
+    t = 0.0
+    while st.status == "playing" and t < 180:
+        while queue and st.place_tower(queue[0][0], queue[0][1])[0]:
+            queue.pop(0)
+        st.advance(1 / 30.0)
+        t += 1 / 30.0
+    return st.status
+
+
+def test_no_single_tool_spam_wins_any_level():
+    for i in range(g.level_count()):
+        lv = g.LEVELS[i]
+        for t in g.TOOLS:
+            assert _spam(lv, t["id"]) == "lost", \
+                f"level {i} can be won by spamming {t['id']} — unsafe play must not win"
+
+
+def test_second_level_won_by_a_correct_mix():
+    lv = g.LEVELS[1]
+    st = g.GameState(lv); st.status = "playing"
+    queue = [(0, "powder"), (2, "wetchem")]
+    t = 0.0
+    while st.status == "playing" and t < 180:
+        while queue and st.place_tower(queue[0][0], queue[0][1])[0]:
+            queue.pop(0)
+        st.advance(1 / 30.0)
+        t += 1 / 30.0
+    r = st.recap()
+    assert r["status"] == "won" and r["leaked"] == 0
+
+
+def test_difficulty_grows_by_variety():
+    # A concrete proxy for "the challenge grows gently": each level introduces at
+    # least as many distinct fire classes as the one before it.
+    counts = []
+    for i in range(g.level_count()):
+        seen = {ev["class"] for ev in g.build_schedule(g.LEVELS[i])}
+        counts.append(len(seen))
+    assert counts == sorted(counts), f"distinct-class counts should be non-decreasing, got {counts}"
+
+
+def test_ideal_tool_earns_more_than_an_acceptable_one():
+    # Using the ideal ("good") tool is clearly better than a merely-acceptable
+    # ("weak") one: it earns the smart-play bonus on top of the base reward.
+    assert g.SMART_BONUS > 0

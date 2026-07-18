@@ -452,11 +452,15 @@ LEVELS = [
         "size": {"w": 960, "h": 540},
         "path": [[20, 430], [240, 430], [240, 120], [520, 120], [520, 440], [820, 440], [820, 220]],
         "build_spots": [[140, 300], [360, 55], [430, 300], [660, 370], [700, 300]],
-        "building": {"x": 850, "y": 200, "lives": 4, "name_de": "Kurhaus"},
-        "budget": 200,
+        # ITEM-017 balance: lives 3 and enough electrical + cooking-oil fires that no
+        # single-tool spam can win — e.g. powder/CO₂ leak the cooking-oil fires, the
+        # wet-chemical tool leaks the electrical fires. Only a correct mix wins.
+        "building": {"x": 850, "y": 200, "lives": 3, "name_de": "Kurhaus"},
+        "budget": 240,
         "waves": [
             {"gap": 1.2, "fires": ["A", "A", "B"]},
-            {"gap": 1.0, "fires": ["B", "electrical", "A", "F"]},
+            {"gap": 1.1, "fires": ["electrical", "F", "B", "A"]},
+            {"gap": 1.0, "fires": ["F", "electrical", "F", "electrical"]},
         ],
     },
     {
@@ -895,6 +899,29 @@ def behaviour_check() -> tuple[bool, list]:
         r = _play_out(lv2, [(i, "water") for i in range(5)], cut=("gas", "power"))
         if r["status"] != "lost":
             problems.append("On the combined level, an all-water defence should lose, but it didn't.")
+
+    # --- ITEM-017 guardrail: no single wrong tool can beat ANY level. Spamming one
+    #     extinguisher on every build spot (and never cutting a supply) must lose every
+    #     level — the core promise that you can only win by playing safe.
+    tool_ids = [t["id"] for t in TOOLS]
+    for i, lvl in enumerate(LEVELS):
+        spots = len(lvl.get("build_spots", []))
+        for tool in tool_ids:
+            r = _play_out(lvl, [(s, tool) for s in range(spots)])
+            if r["status"] == "won":
+                problems.append(
+                    f"Level {i + 1} ('{lvl['name']}') can be won by spamming a single "
+                    f"tool ({tool}) — an unsafe/lazy strategy should never beat a level."
+                )
+
+    # --- ITEM-017: the second level (Kurpark) is won by a correct mix. ---
+    if len(LEVELS) > 1:
+        r = _play_out(LEVELS[1], [(0, "powder"), (2, "wetchem")])
+        if r["status"] != "won" or r["leaked"] != 0:
+            problems.append(
+                "The second level should be won by a correct mix (powder + wet-chemical) "
+                f"with nothing leaking, but got status={r['status']}, {r['leaked']} leaked."
+            )
 
     return (len(problems) == 0, problems)
 
