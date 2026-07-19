@@ -1388,54 +1388,62 @@ GAME_HTML = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Firefighter Defense — Königstein</title>
   <style>
-    :root { color-scheme: light dark; }
+    /* --- ITEM-038 two-tone flat palette, as CSS variables (matches the approved
+       mockup). body.hc overrides the SAME variables, so the high-contrast toggle
+       (ITEM-020) keeps working for every element that uses them. --- */
+    :root{
+      color-scheme: light dark;
+      --page:#f4f7fc; --ink:#1f2937; --muted:#5b6b7f;
+      --red:#e4572e; --blue:#2f6fed; --panel:#ffffff; --line:#e4ebf5;
+      --a:#f59e0b; --b:#8b5cf6; --c:#14b8a6; --e:#2f6fed; --d:#64748b; --f:#d6409f;
+    }
+    body.hc{
+      --page:#0b0d12; --ink:#ffffff; --muted:#cbd5e1;
+      --red:#ff7a4d; --blue:#7cb0ff; --panel:#161a22; --line:#39414f;
+      --a:#ffc247; --b:#c4a7ff; --c:#4fe6cf; --e:#7cb0ff; --d:#c3cee0; --f:#ff86d3;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0; padding: 1rem; min-height: 100vh;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: #fff7ed; color: #7c2d12;
+      background: var(--page); color: var(--ink);
+      transition: background .2s, color .2s;
       display: flex; flex-direction: column; align-items: center; gap: .6rem;
     }
     header { text-align: center; }
-    h1 { margin: 0; font-size: 1.35rem; }
-    .place { margin: .15rem 0 0; color: #9a6a4f; font-size: .9rem; }
+    h1 { margin: 0; font-size: 1.35rem; color: var(--ink); }
+    .place { margin: .15rem 0 0; color: var(--muted); font-size: .9rem; }
     .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: center; }
     .lives { font-size: 1.1rem; }
     button {
-      font: inherit; padding: .5rem 1rem; border-radius: 999px; cursor: pointer;
-      border: 1px solid #e7c9b3; background: #fff; color: #7c2d12;
+      font: inherit; padding: .55rem 1.05rem; border-radius: 14px; cursor: pointer;
+      border: none; background: var(--panel); color: var(--ink);
+      box-shadow: 0 2px 0 var(--line); font-weight: 600;
       min-height: 44px;                 /* comfortable finger target (ITEM-020) */
     }
-    button.active { background: #ea580c; color: #fff; border-color: #ea580c; }
-    label { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; }
+    button.active { background: var(--red); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.15); }
+    button:disabled { opacity: .5; cursor: default; }
+    label { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; color: var(--muted); }
     label input { width: 20px; height: 20px; }
-    #toolPalette button { min-width: 60px; font-weight: 600; }
+    #toolPalette button { min-width: 64px; }
     .wrap { width: 100%; max-width: 960px; }
     canvas {
-      width: 100%; height: auto; border-radius: 16px; box-shadow: 0 10px 30px rgba(124,45,18,.12);
-      background:#f4ead8; display:block;
+      width: 100%; height: auto; border-radius: 22px; box-shadow: 0 10px 30px rgba(31,41,55,.12);
+      background: var(--panel); display:block;
       touch-action: manipulation;       /* reliable taps, no double-tap zoom delay */
     }
-    .legend { display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; color:#9a6a4f; font-size:.82rem; }
+    .legend { display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; color:var(--muted); font-size:.82rem; }
     .legend span::before { content:"● "; }
-    .foot { color:#9a6a4f; font-size:.8rem; }
+    .foot { color:var(--muted); font-size:.8rem; }
+    #hint { color: var(--muted); }
 
-    /* --- Große Schrift / Hoher Kontrast (large text / high contrast) — ITEM-020.
-       An opt-in class on <body>; purely presentational, never touches game logic.
-       The canvas keeps its icon + class-letter + shape signalling; this darkens the
-       page chrome and enlarges text so it reads across a room / on a projector. --- */
-    body.hc { background:#000; color:#fff; font-size:1.12rem; }
-    body.hc h1 { color:#fff; }
-    body.hc .place, body.hc .foot, body.hc #antonMood, body.hc #info { color:#fde047 !important; }
-    body.hc .legend { color:#fff; }
-    body.hc label { color:#fff !important; }
-    body.hc button { background:#111; color:#fff; border:2px solid #fff; }
-    body.hc button.active { background:#fde047; color:#000; border-color:#fde047; }
-    body.hc button:disabled { color:#9ca3af; border-color:#6b7280; }
-    body.hc canvas { background:#0b0b0b; border:2px solid #fff; box-shadow:none; }
+    /* Large text in high-contrast so it reads across a room / on a projector
+       (ITEM-020). Colours come from the body.hc variables above; this only bumps
+       sizes and forces a plain dark board frame. */
+    body.hc { font-size: 1.12rem; }
+    body.hc canvas { border: 2px solid var(--line); box-shadow: none; }
     body.hc #hint, body.hc #feedback, body.hc .legend,
-    body.hc .place, body.hc #antonMood, body.hc label { font-size:1.05rem !important; }
-    body.hc #feedback { color:#fde047 !important; }
+    body.hc .place, body.hc #antonMood, body.hc label { font-size: 1.05rem !important; }
 
     /* --- Portrait / small-screen: cap the board so the extinguisher palette and
        controls stay on-screen and reachable during play (ITEM-020). --- */
@@ -1453,9 +1461,9 @@ GAME_HTML = """<!DOCTYPE html>
 <body>
   <header>
     <h1>Firefighter Defense — Königstein</h1>
-    <p style="margin:.1rem 0; font-size:.85rem; color:#b45309; font-weight:600;">🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre</p>
+    <p style="margin:.1rem 0; font-size:.85rem; color:var(--red); font-weight:600;">🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre</p>
     <p class="place" id="place">Einsatz wird geladen …</p>
-    <p id="antonMood" style="margin:.1rem 0 0; font-size:.82rem; font-style:italic; color:#b45309;"></p>
+    <p id="antonMood" style="margin:.1rem 0 0; font-size:.82rem; font-style:italic; color:var(--muted);"></p>
   </header>
 
   <div class="bar" id="levelBar"></div>
@@ -1463,11 +1471,11 @@ GAME_HTML = """<!DOCTYPE html>
     <span class="lives" id="lives"></span>
     <span id="budget" style="font-weight:600;"></span>
     <button id="startBtn">Einsatz starten</button>
-    <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
-    <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
-    <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="soundToggle" checked> Ton</label>
+    <label style="font-size:.85rem;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
+    <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
+    <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> Ton</label>
     <button id="libBtn">Antons Wissen</button>
-    <span id="info" style="color:#9a6a4f; font-size:.9rem;"></span>
+    <span id="info" style="color:var(--muted); font-size:.9rem;"></span>
   </div>
 
   <div class="bar" id="toolPalette"></div>
@@ -1488,22 +1496,22 @@ GAME_HTML = """<!DOCTYPE html>
 
   <!-- Anton's "meet the fire" card (ITEM-011) -->
   <div id="card" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); align-items:center; justify-content:center; z-index:10;">
-    <div style="background:#fff; color:#7c2d12; max-width:26rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:18px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+    <div style="background:var(--panel); color:var(--ink); max-width:26rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.35);">
       <div id="cardIcon" style="font-size:2.6rem;"></div>
       <h3 id="cardTitle" style="margin:.3rem 0;"></h3>
       <p id="cardText" style="line-height:1.5;"></p>
-      <p style="font-size:.8rem; color:#9a6a4f; margin:.6rem 0;">— Anton, der Burggeist 👻</p>
+      <p style="font-size:.8rem; color:var(--muted); margin:.6rem 0;">— Anton, der Burggeist 👻</p>
       <button id="cardOk">Verstanden</button>
     </div>
   </div>
 
   <!-- End-of-level recap (ITEM-013) -->
   <div id="recap" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:11;">
-    <div style="background:#fff; color:#7c2d12; max-width:30rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:18px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+    <div style="background:var(--panel); color:var(--ink); max-width:30rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
       <h2 id="recapTitle" style="margin:.2rem 0; text-align:center;"></h2>
       <p id="recapScore" style="text-align:center; font-size:1.15rem; font-weight:600; margin:.3rem 0;"></p>
-      <p id="recapLine" style="text-align:center; color:#9a6a4f; margin:.2rem 0 .8rem;"></p>
-      <p id="recapAnton" style="text-align:center; font-style:italic; color:#7c2d12; margin:.2rem 0 .8rem; line-height:1.5;"></p>
+      <p id="recapLine" style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;"></p>
+      <p id="recapAnton" style="text-align:center; font-style:italic; color:var(--ink); margin:.2rem 0 .8rem; line-height:1.5;"></p>
       <div id="recapClasses" style="font-size:.9rem;"></div>
       <div style="text-align:center; margin-top:1rem; display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap;">
         <button id="recapNext" class="active" style="display:none;">Nächster Einsatz ▶</button>
@@ -1515,9 +1523,9 @@ GAME_HTML = """<!DOCTYPE html>
 
   <!-- Antons Wissen library (ITEM-014) -->
   <div id="lib" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:12;">
-    <div style="background:#fff; color:#7c2d12; max-width:34rem; max-height:86vh; overflow:auto; margin:1rem; padding:1.2rem 1.4rem; border-radius:18px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+    <div style="background:var(--panel); color:var(--ink); max-width:34rem; max-height:86vh; overflow:auto; margin:1rem; padding:1.2rem 1.4rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
       <h2 style="margin:.2rem 0; text-align:center;">Antons Wissen 👻</h2>
-      <p style="text-align:center; color:#9a6a4f; margin:.2rem 0 .8rem;">Welcher Löscher passt zu welchem Feuer?</p>
+      <p style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;">Welcher Löscher passt zu welchem Feuer?</p>
       <div id="libBody" style="font-size:.9rem;"></div>
       <div style="text-align:center; margin-top:1rem;"><button id="libClose">Schließen</button></div>
     </div>
@@ -1751,13 +1759,70 @@ GAME_HTML = """<!DOCTYPE html>
     }
 
     // --- drawing ---
+    // --- ITEM-038 two-tone flat helpers (ported from the approved mockup) ------
+    // Read a CSS variable (the flat palette), cached per theme so it's cheap per frame.
+    var _cssv={}, _cssvKey='';
+    function cssv(n){
+      var key = contrastEnabled ? 'hc' : 'lt';
+      if (key!==_cssvKey){ _cssv={}; _cssvKey=key; }
+      if (_cssv[n]!==undefined) return _cssv[n];
+      var v=''; try { v=getComputedStyle(document.body).getPropertyValue(n).trim(); } catch(e){ v=''; }
+      _cssv[n]=v; return v;
+    }
+    // Mix a hex colour toward white (amt>0) or black (amt<0) — gives the 2nd flat tone.
+    function shade(hex,amt){
+      hex=(hex||'').replace('#',''); if(hex.length===3) hex=hex.split('').map(function(x){return x+x;}).join('');
+      if(hex.length<6) return '#888';
+      var r=parseInt(hex.substr(0,2),16), g=parseInt(hex.substr(2,2),16), b=parseInt(hex.substr(4,2),16);
+      var t=amt<0?0:255, a=Math.abs(amt);
+      r=Math.round(r+(t-r)*a); g=Math.round(g+(t-g)*a); b=Math.round(b+(t-b)*a);
+      return 'rgb('+r+','+g+','+b+')';
+    }
+    // Rounded-rect path.
+    function rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+    // The ONE allowed background gradient (sky), computed ONCE per size/theme.
+    var _skyGrad=null, _skyKey='';
+    function skyGradient(w,h){
+      var key=w+'x'+h+(contrastEnabled?'d':'l');
+      if(key!==_skyKey){
+        var g=ctx.createLinearGradient(0,0,0,h);
+        if(contrastEnabled){ g.addColorStop(0,'#0b0d12'); g.addColorStop(1,'#161f2b'); }
+        else { g.addColorStop(0,'#e6effb'); g.addColorStop(1,'#f6f9fd'); }
+        _skyGrad=g; _skyKey=key;
+      }
+      return _skyGrad;
+    }
+    // A fire class -> its flat-palette colour (visual only; letter/icon unchanged).
+    var _CLASS_VAR={A:'--a',B:'--b',C:'--c',electrical:'--e',D:'--d',F:'--f'};
+    function classColour(cls){ return cssv(_CLASS_VAR[cls]||'') || (classMap[cls]&&classMap[cls].colour) || '#e4572e'; }
+    function flameShape(c,s,sc){ c.beginPath(); c.moveTo(0,-s*sc);
+      c.bezierCurveTo(s*0.9*sc,-s*0.5*sc, s*0.75*sc,s*0.7*sc, 0,s*sc);
+      c.bezierCurveTo(-s*0.75*sc,s*0.7*sc, -s*0.9*sc,-s*0.5*sc, 0,-s*sc); c.closePath(); }
+    // Two-tone flat extinguisher body in the tool colour.
+    function drawExtShape(x,y,w,h,col){
+      ctx.save();
+      ctx.fillStyle=col; rr(ctx,x,y,w,h,w*0.36); ctx.fill();
+      ctx.save(); rr(ctx,x,y,w,h,w*0.36); ctx.clip();
+      ctx.fillStyle=shade(col,-0.22); ctx.fillRect(x+w*0.55,y,w*0.5,h);
+      ctx.fillStyle=shade(col,0.35); ctx.fillRect(x,y,w*0.16,h);
+      ctx.restore();
+      ctx.fillStyle=cssv('--ink')||'#1f2937'; rr(ctx,x+w*0.32,y-h*0.14,w*0.36,h*0.14,3); ctx.fill();
+      rr(ctx,x+w*0.12,y-h*0.05,w*0.76,h*0.09,3); ctx.fill();
+      ctx.fillStyle='#ffffff'; rr(ctx,x+w*0.2,y+h*0.30,w*0.6,h*0.3,4); ctx.fill();
+      ctx.restore();
+    }
+
     function trace(wp) { ctx.beginPath(); ctx.moveTo(wp[0][0], wp[0][1]); for (var i=1;i<wp.length;i++) ctx.lineTo(wp[i][0],wp[i][1]); }
     function drawPath(wp) {
+      // Two-tone rounded ribbon: base road + a lighter top edge + a dashed centre.
+      var road = contrastEnabled ? '#2b3546' : '#c3cfdd';
       ctx.lineCap='round'; ctx.lineJoin='round';
-      ctx.strokeStyle='#cbb79f'; ctx.lineWidth=40; trace(wp); ctx.stroke();
-      ctx.strokeStyle='#a8a29e'; ctx.lineWidth=30; trace(wp); ctx.stroke();
+      ctx.strokeStyle=road; ctx.lineWidth=44; trace(wp); ctx.stroke();
+      ctx.strokeStyle=shade(road,0.22); ctx.lineWidth=44; ctx.save(); ctx.translate(0,-7); trace(wp); ctx.stroke(); ctx.restore();
+      ctx.strokeStyle=road; ctx.lineWidth=30; trace(wp); ctx.stroke();
+      ctx.strokeStyle=shade(road, contrastEnabled?0.4:-0.08); ctx.lineWidth=3; ctx.setLineDash([12,14]); trace(wp); ctx.stroke(); ctx.setLineDash([]);
     }
-    function drawBuildSpot(x,y){ ctx.setLineDash([6,6]); ctx.strokeStyle='#0369a1'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x,y,22,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
+    function drawBuildSpot(x,y){ ctx.setLineDash([5,6]); ctx.strokeStyle = contrastEnabled ? '#3b4657' : '#bcd0ea'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
     // A clear focus ring on the keyboard-highlighted build spot (ITEM-020), so a
     // keyboard player can always see where they are.
     function drawKeyHighlight(){
@@ -1773,45 +1838,81 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.fillText('▶ Bauplatz ' + (keyIndex+1), s[0], s[1]-pulse-6);
       ctx.restore();
     }
-    function drawStart(wp){ ctx.fillStyle='#c2410c'; ctx.beginPath(); ctx.arc(wp[0][0],wp[0][1],9,0,Math.PI*2); ctx.fill(); ctx.font='12px system-ui'; ctx.textAlign='center'; ctx.fillText('Start', wp[0][0], wp[0][1]-15); }
+    function drawStart(wp){
+      var b=cssv('--blue')||'#2f6fed';
+      ctx.fillStyle=shade(b,-0.15); ctx.beginPath(); ctx.arc(wp[0][0],wp[0][1],13,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=b; ctx.beginPath(); ctx.arc(wp[0][0],wp[0][1],8,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=cssv('--muted')||'#5b6b7f'; ctx.font='600 12px system-ui'; ctx.textAlign='center'; ctx.fillText('Start', wp[0][0], wp[0][1]-20);
+    }
+    // Two-tone flat house; KEEPS the red damage flash + the HTML lives display.
     function drawBuilding(b){
       var flashing = game && performance.now() < game.flashUntil;
-      var w=74,h=60;
-      ctx.fillStyle = flashing ? '#dc2626' : '#15803d'; ctx.fillRect(b.x-w/2,b.y-h/2,w,h);
-      ctx.beginPath(); ctx.moveTo(b.x-w/2-8,b.y-h/2); ctx.lineTo(b.x,b.y-h/2-32); ctx.lineTo(b.x+w/2+8,b.y-h/2); ctx.closePath();
-      ctx.fillStyle = flashing ? '#991b1b' : '#166534'; ctx.fill();
-      ctx.fillStyle='#fde68a'; ctx.fillRect(b.x-10,b.y-2,20,h/2+2);
-      ctx.fillStyle='#14532d'; ctx.font='13px system-ui'; ctx.textAlign='center';
-      ctx.fillText(b.name_de||'Gebäude', b.x, b.y+h/2+18);
+      var hc=contrastEnabled;
+      var cream = flashing ? (hc?'#7a2b1e':'#f2b0a0') : (hc?'#e9d9b8':'#f3e4c2');
+      var W=94, H=76, x=b.x-W/2, yTop=b.y-H/2;
+      var bodyY=yTop+18, bodyH=H-18;
+      // body — TONE1 + a TONE2 shadow plane on the right third
+      ctx.fillStyle=cream; rr(ctx,x,bodyY,W,bodyH,12); ctx.fill();
+      ctx.save(); rr(ctx,x,bodyY,W,bodyH,12); ctx.clip(); ctx.fillStyle=shade(cream,-0.12); ctx.fillRect(x+W*0.66,bodyY,W*0.34,bodyH); ctx.restore();
+      // roof — TONE1 red (turns bright red on damage flash) + TONE2 darker eave
+      var red = flashing ? (hc?'#ff5a4d':'#dc2626') : (cssv('--red')||'#e4572e');
+      ctx.fillStyle=red; ctx.beginPath(); ctx.moveTo(x-6,bodyY+4); ctx.lineTo(x+W/2,yTop-8); ctx.lineTo(x+W+6,bodyY+4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=shade(red,-0.2); ctx.fillRect(x-6,bodyY,W+12,6);
+      // door + window — two-tone blue
+      var blue=cssv('--blue')||'#2f6fed';
+      ctx.fillStyle=shade(blue,-0.15); rr(ctx,x+W/2-14,bodyY+18,28,bodyH-18,6); ctx.fill();
+      ctx.fillStyle=blue; rr(ctx,x+W/2-10,bodyY+22,20,bodyH-22,4); ctx.fill();
+      ctx.fillStyle=shade(blue,0.55); rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
+      // name label
+      ctx.fillStyle=cssv('--ink')||'#1f2937'; ctx.font='700 13px system-ui'; ctx.textAlign='center';
+      ctx.fillText(b.name_de||'Gebäude', b.x, bodyY+bodyH+16);
     }
+    // Two-tone flat flame with a friendly-evil face (ITEM-038 baseline). Every fire
+    // KEEPS its class letter badge + icon + reaction-ring shapes (greyscale-safe,
+    // ITEM-008). A single generic flame for all classes here; the per-type fire
+    // characters are a later item (ITEM-039), not built now.
     function drawFire(f){
       var p = pathPointAt(game.level.path, f.progress);
-      var cls = classMap[f.cls] || {icon:'🔥', colour:'#dc2626', letter:'?'};
+      var cls = classMap[f.cls] || {icon:'🔥', letter:'?'};
+      var col = classColour(f.cls);
       var reacting = f.reaction && performance.now() < (f.reactionUntil||0);
-      // soft animated glow behind the fire (cartoon flame feel), colour = its class
-      var pulse = 24 + Math.sin(performance.now()/180 + p[0]) * 3;
-      var grad = ctx.createRadialGradient(p[0],p[1],3, p[0],p[1],pulse);
-      grad.addColorStop(0, cls.colour); grad.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.save(); ctx.globalAlpha=0.35; ctx.fillStyle=grad;
-      ctx.beginPath(); ctx.arc(p[0],p[1],pulse,0,Math.PI*2); ctx.fill(); ctx.restore();
+      var s = 22, x = p[0], y = p[1];
+      // reaction rings — KEEP the exact shapes (solid red = danger, dashed grey = useless)
       if (reacting && f.reaction==='danger'){
-        ctx.beginPath(); ctx.arc(p[0],p[1],25,0,Math.PI*2); ctx.strokeStyle='#b91c1c'; ctx.lineWidth=4; ctx.stroke();
+        ctx.beginPath(); ctx.arc(x,y,s+8,0,Math.PI*2); ctx.strokeStyle='#b91c1c'; ctx.lineWidth=4; ctx.stroke();
       } else if (reacting && f.reaction==='useless'){
-        ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(p[0],p[1],24,0,Math.PI*2); ctx.strokeStyle='#9ca3af'; ctx.lineWidth=3; ctx.stroke(); ctx.setLineDash([]);
+        ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(x,y,s+7,0,Math.PI*2); ctx.strokeStyle='#9ca3af'; ctx.lineWidth=3; ctx.stroke(); ctx.setLineDash([]);
       }
-      ctx.beginPath(); ctx.arc(p[0],p[1],17,0,Math.PI*2); ctx.fillStyle=cls.colour; ctx.fill();
-      ctx.lineWidth=2; ctx.strokeStyle='#fff'; ctx.stroke();
-      ctx.font='18px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(cls.icon, p[0], p[1]+1);
-      ctx.beginPath(); ctx.arc(p[0]+15,p[1]-15,8,0,Math.PI*2); ctx.fillStyle='#111827'; ctx.fill();
-      ctx.fillStyle='#fff'; ctx.font='bold 10px system-ui'; ctx.fillText(cls.letter, p[0]+15, p[1]-14);
-      if (reacting && f.reaction==='danger'){ ctx.font='15px system-ui'; ctx.fillText('⚠️', p[0], p[1]-26); }
+      ctx.save(); ctx.translate(x,y);
+      // TONE 1 — outer flame (base class colour)
+      ctx.fillStyle=col; flameShape(ctx,s,1); ctx.fill();
+      // TONE 2 — inner hotter core (lighter shade), offset down
+      ctx.save(); ctx.translate(0,s*0.18); ctx.fillStyle=shade(col,0.42); flameShape(ctx,s,0.6); ctx.fill(); ctx.restore();
+      // friendly-evil face: eyes + pupils, angled brows, small mouth
+      ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(-s*0.28,-s*0.05,s*0.17,0,Math.PI*2); ctx.arc(s*0.28,-s*0.05,s*0.17,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#101418';
+      ctx.beginPath(); ctx.arc(-s*0.28,-s*0.02,s*0.07,0,Math.PI*2); ctx.arc(s*0.28,-s*0.02,s*0.07,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='#101418'; ctx.lineWidth=Math.max(2,s*0.06); ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(-s*0.45,-s*0.35); ctx.lineTo(-s*0.12,-s*0.2); ctx.moveTo(s*0.45,-s*0.35); ctx.lineTo(s*0.12,-s*0.2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-s*0.2,s*0.34); ctx.quadraticCurveTo(0,s*0.5,s*0.2,s*0.34); ctx.stroke();
+      ctx.restore();
+      // letter badge (white circle + dark letter) — survives greyscale
+      ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(x+s*0.72,y-s*0.72,s*0.42,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#101418'; ctx.font='700 '+(s*0.62)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(cls.letter||'?', x+s*0.72, y-s*0.70);
+      // class icon below
+      ctx.font=(s*0.7)+'px system-ui'; ctx.fillStyle='#101418'; ctx.fillText(cls.icon||'🔥', x, y+s*1.5);
+      // danger warning glyph — KEEP
+      if (reacting && f.reaction==='danger'){ ctx.font='15px system-ui'; ctx.fillText('⚠️', x, y-s-14); }
       ctx.textBaseline='alphabetic';
     }
     function drawOverlay(){
       // Just a soft dim when the level is over; the detailed recap is an HTML modal.
       if (!game || game.status==='playing' || game.status==='idle') return;
-      ctx.fillStyle='rgba(255,247,237,.55)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = contrastEnabled ? 'rgba(11,13,18,.55)' : 'rgba(244,247,252,.55)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
     }
 
     // --- Reward vignettes + finale (ITEM-028) ---------------------------------
@@ -1998,13 +2099,13 @@ GAME_HTML = """<!DOCTYPE html>
       game.schedule.forEach(function(ev){
         if (seen[ev['class']]) return; seen[ev['class']]=true;
         var c=classMap[ev['class']]||{};
-        rows += '<div style="display:flex; align-items:center; gap:.5rem; padding:.25rem 0; border-top:1px solid #f0e6da;">' +
+        rows += '<div style="display:flex; align-items:center; gap:.5rem; padding:.25rem 0; border-top:1px solid var(--line);">' +
                 '<span style="font-size:1.3rem;">'+(c.icon||'🔥')+'</span>' +
                 '<span style="flex:1;">'+(c.name_de||ev['class'])+'</span>' +
-                '<span style="color:#15803d;">Richtig: '+(rightActionFor(ev['class'])||'')+'</span></div>';
+                '<span style="color:var(--c);">Richtig: '+(rightActionFor(ev['class'])||'')+'</span></div>';
       });
       document.getElementById('recapClasses').innerHTML =
-        '<div style="color:#9a6a4f; margin-bottom:.2rem;">Diese Feuer kamen vor:</div>' + rows;
+        '<div style="color:var(--muted); margin-bottom:.2rem;">Diese Feuer kamen vor:</div>' + rows;
 
       // Anton closes the mission and notes the rescue bonus. (Campaign progress is
       // already advanced in handleEnd(), before the reward vignette/finale plays.)
@@ -2045,11 +2146,11 @@ GAME_HTML = """<!DOCTYPE html>
           if (o==='good') goods.push(t.short);
           else if (o==='danger') dangers.push(t.short);
         });
-        rows += '<div style="padding:.5rem 0; border-top:1px solid #f0e6da;">' +
+        rows += '<div style="padding:.5rem 0; border-top:1px solid var(--line);">' +
           '<div style="font-weight:600;">'+(c.icon||'🔥')+' '+(c.name_de||cid)+'</div>' +
-          '<div style="color:#7c2d12;">'+(c.card_de||'')+'</div>' +
-          '<div style="color:#15803d;">✓ Richtig: '+(goods.join(', ')||'—')+'</div>' +
-          (dangers.length ? '<div style="color:#b91c1c;">⚠️ Gefährlich: '+dangers.join(', ')+'</div>' : '') +
+          '<div style="color:var(--ink);">'+(c.card_de||'')+'</div>' +
+          '<div style="color:var(--c);">✓ Richtig: '+(goods.join(', ')||'—')+'</div>' +
+          (dangers.length ? '<div style="color:var(--red);">⚠️ Gefährlich: '+dangers.join(', ')+'</div>' : '') +
           '</div>';
       });
       body.innerHTML = rows || '<p>Wird geladen …</p>';
@@ -2210,14 +2311,15 @@ GAME_HTML = """<!DOCTYPE html>
       });
     }
 
+    // Two-tone flat extinguisher in the tool's colour, with its short label.
     function drawTower(tw){
       var t=toolMap[tw.tool]||{hex:'#334155', short:'?'};
       var x=tw.spot[0], y=tw.spot[1];
-      ctx.beginPath(); ctx.arc(x,y,TOWER_RANGE,0,Math.PI*2); ctx.fillStyle='rgba(2,132,199,.05)'; ctx.fill();
-      ctx.beginPath(); ctx.arc(x,y,20,0,Math.PI*2); ctx.fillStyle=t.hex; ctx.fill();
-      ctx.lineWidth=3; ctx.strokeStyle='#fff'; ctx.stroke();
-      ctx.fillStyle='#fff'; ctx.font='bold 9px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText((t.short||'').slice(0,6), x, y);
+      ctx.beginPath(); ctx.arc(x,y,TOWER_RANGE,0,Math.PI*2); ctx.fillStyle='rgba(47,111,237,.05)'; ctx.fill();
+      var w=26, h=36;
+      drawExtShape(x-w/2, y-h/2+3, w, h, t.hex||'#334155');
+      ctx.fillStyle='#101418'; ctx.font='700 9px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText((t.short||'').slice(0,6), x, y+h*0.27);
       ctx.textBaseline='alphabetic';
     }
     function drawSprays(){
@@ -2246,19 +2348,22 @@ GAME_HTML = """<!DOCTYPE html>
       renderHazardControls();
     }
 
-    function drawTree(x,y){ ctx.fillStyle='#6aa84f'; ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#7a5230'; ctx.fillRect(x-4,y+16,8,16); }
+    // One shared, styled two-tone flat background (sky gradient + a couple of simple
+    // flat props). Per-mission distinct locations are a later item (ITEM-035), not here.
     function drawBackground(){
-      var w=canvas.width, h=canvas.height;
-      var park = level && level.index===1;
-      ctx.fillStyle = park ? '#eef6e7' : '#f6ecdd';
-      ctx.fillRect(0,0,w,h);
-      // a couple of low-key corner decorations, kept away from the play area
-      ctx.save(); ctx.globalAlpha=0.5;
-      if (park){ drawTree(40,h-40); drawTree(w-40,40); }
-      else {
-        ctx.strokeStyle='#e4d3ba'; ctx.lineWidth=5;
-        ctx.strokeRect(20,h-70,90,55); ctx.beginPath(); ctx.moveTo(20,h-70); ctx.lineTo(110,h-15); ctx.moveTo(110,h-70); ctx.lineTo(20,h-15); ctx.stroke();
-      }
+      var w=canvas.width, h=canvas.height, hc=contrastEnabled;
+      ctx.fillStyle=skyGradient(w,h); ctx.fillRect(0,0,w,h);
+      // two-tone cloud, top-left corner
+      ctx.save(); ctx.globalAlpha=hc?0.55:0.95;
+      ctx.fillStyle=hc?'#1b2431':'#dfe9f5'; ctx.beginPath(); ctx.arc(96,66,34,0,Math.PI*2); ctx.arc(134,76,26,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=hc?'#141c27':'#cddcee'; ctx.beginPath(); ctx.arc(118,86,30,0,Math.PI); ctx.fill();
+      ctx.restore();
+      // two-tone tree, top-right corner (kept clear of the play area)
+      ctx.save(); ctx.globalAlpha=hc?0.6:1;
+      var tx=w-70, ty=118;
+      ctx.fillStyle=hc?'#3a2a1c':'#b98a5a'; rr(ctx,tx-5,ty,10,26,3); ctx.fill();
+      ctx.fillStyle=hc?'#22331f':'#cfe6c8'; ctx.beginPath(); ctx.moveTo(tx-34,ty); ctx.lineTo(tx,ty-58); ctx.lineTo(tx+34,ty); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=hc?'#2c4028':'#bcdcb2'; ctx.beginPath(); ctx.moveTo(tx-20,ty); ctx.lineTo(tx,ty-32); ctx.lineTo(tx+34,ty); ctx.closePath(); ctx.fill();
       ctx.restore();
     }
     // Draw Anton the ghost at (x,y) on any context. Shared by the board, the reward
@@ -2268,22 +2373,28 @@ GAME_HTML = """<!DOCTYPE html>
     function drawGhost(c, x, y, scale, alpha, tilt, helmet, bright){
       c.save();
       c.translate(x, y); c.rotate(tilt||0); c.scale(scale, scale);
-      var base = bright ? 246 : 226;
+      var body = cssv('--blue') || '#2f6fed';
       c.globalAlpha = Math.max(0.2, Math.min(1, alpha));
-      c.fillStyle = 'rgb('+base+','+(base+4)+','+Math.min(255, base+14)+')';
+      // TONE 1 — body (a touch brighter when braver)
+      c.fillStyle = bright ? shade(body,0.12) : body;
       c.beginPath(); c.arc(0,0,18,Math.PI,0);
       c.lineTo(18,16);
       c.quadraticCurveTo(9,24, 0,16);
       c.quadraticCurveTo(-9,24, -18,16);
       c.closePath(); c.fill();
+      // TONE 2 — lighter belly
+      c.fillStyle = shade(body, 0.45);
+      c.beginPath(); c.arc(0,2,11,Math.PI*0.15,Math.PI*0.85); c.fill();
       c.globalAlpha = Math.min(1, alpha+0.12);
-      c.fillStyle='#334155';
-      c.beginPath(); c.arc(-6,-2,3,0,Math.PI*2); c.arc(6,-2,3,0,Math.PI*2); c.fill();
+      c.fillStyle='#fff';
+      c.beginPath(); c.arc(-6,-2,4,0,Math.PI*2); c.arc(6,-2,4,0,Math.PI*2); c.fill();
+      c.fillStyle='#101418';
+      c.beginPath(); c.arc(-6,-1,2,0,Math.PI*2); c.arc(6,-1,2,0,Math.PI*2); c.fill();
       if (bright){  // a small confident smile
-        c.strokeStyle='#334155'; c.lineWidth=1.5; c.beginPath(); c.arc(0,4,5,0.15*Math.PI,0.85*Math.PI); c.stroke();
+        c.strokeStyle='#101418'; c.lineWidth=1.5; c.beginPath(); c.arc(0,4,5,0.15*Math.PI,0.85*Math.PI); c.stroke();
       }
       if (helmet){  // the little crooked fire helmet — only from the finale onward
-        c.save(); c.translate(0,-15); c.rotate(-0.2); c.globalAlpha=1; c.fillStyle='#dc2626';
+        c.save(); c.translate(0,-15); c.rotate(-0.2); c.globalAlpha=1; c.fillStyle=cssv('--red')||'#dc2626';
         c.fillRect(-13,-2,26,5); c.beginPath(); c.arc(0,0,8,Math.PI,0); c.fill(); c.restore();
       }
       c.restore();
@@ -2355,7 +2466,7 @@ GAME_HTML = """<!DOCTYPE html>
       if (!msg) return;
       var el=document.getElementById('feedback');
       el.textContent = (kind==='danger' ? '⚠️ ' : '') + 'Anton: ' + msg;
-      el.style.color = (kind==='danger') ? '#b91c1c' : '#9a6a4f';
+      el.style.color = (kind==='danger') ? 'var(--red)' : 'var(--muted)';
       feedbackUntil = performance.now() + 2600;
     }
     function showCard(cls){
@@ -2533,9 +2644,12 @@ GAME_HTML = """<!DOCTYPE html>
       return fetch('/api/classes').then(function(r){return r.json();}).then(function(list){
         var leg=document.getElementById('classLegend'); leg.innerHTML='';
         window._classOrder = list.map(function(c){ return c.id; });
+        var CV={A:'--a',B:'--b',C:'--c',electrical:'--e',D:'--d',F:'--f'};
         list.forEach(function(c){
           classMap[c.id]=c;
-          var el=document.createElement('span'); el.style.color=c.colour;
+          // Use the flat-palette CSS variable so the legend matches the canvas and
+          // follows the high-contrast toggle automatically (visual only).
+          var el=document.createElement('span'); el.style.color='var('+(CV[c.id]||'--ink')+')';
           el.textContent=c.icon+' '+c.name_de+' ('+c.letter+')'; leg.appendChild(el);
         });
       }).catch(function(){});

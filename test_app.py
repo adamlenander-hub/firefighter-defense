@@ -859,3 +859,33 @@ def test_arc_and_finale_do_not_change_any_fire_fact_or_level():
     assert ok, problems
     ok2, problems2 = g.behaviour_check()
     assert ok2, "; ".join(problems2)
+
+
+# --- ITEM-038: two-tone flat art direction (visual only) ----------------------
+
+def test_flat_palette_and_helpers_present_in_page():
+    html = g.render_game_html()
+    # the approved flat palette as CSS variables, for both themes
+    assert "--a:#f59e0b" in html and "--e:#2f6fed" in html          # :root light
+    assert "--a:#ffc247" in html and "--panel:#161a22" in html      # body.hc dark
+    # the shared two-tone helpers the later visual items reuse
+    assert "function shade(" in html and "function rr(" in html
+    assert "function skyGradient(" in html                          # sky gradient computed once
+    # panels/canvas reskinned to the flat rounded look
+    assert "border-radius: 22px" in html
+
+
+def test_high_contrast_still_overrides_to_a_dark_field():
+    # The high-contrast toggle (ITEM-020) must still switch to a plain dark field.
+    html = g.render_game_html()
+    assert "body.hc{" in html
+    assert "--page:#0b0d12" in html            # dark page background variable
+    assert 'id="contrastToggle"' in html       # the toggle is still present
+
+
+def test_visual_reskin_changed_no_fire_fact_or_balance():
+    # ITEM-038 is visual only — the matrix and safe-play guards are unchanged.
+    ok, problems = g.check_content()
+    assert ok, problems
+    ok2, problems2 = g.behaviour_check()
+    assert ok2, "; ".join(problems2)
