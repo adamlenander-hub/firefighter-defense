@@ -100,6 +100,22 @@ def test_game_page_is_german_and_has_canvas():
     assert "<canvas" in html
 
 
+def test_sound_toggle_and_effects_are_wired():
+    # ITEM-019: browser-generated sound with a German mute toggle, guarded so a
+    # failure is silent. This checks the wiring exists in the page; loudness and
+    # autoplay-unlock can only be judged by a real-browser listen.
+    html = g.render_game_html()
+    assert 'id="soundToggle"' in html          # the mute checkbox
+    assert "> Ton<" in html                     # labelled in German, default checked
+    assert "checkbox" in html and 'id="soundToggle" checked' in html
+    assert "function playSound" in html         # the single guarded entry point
+    assert "function initAudio" in html         # autoplay-safe unlock on user gesture
+    assert "AudioContext" in html               # Web Audio API (no audio files)
+    for cue in ("'good'", "'danger'", "'useless'", "'win'", "'lose'"):
+        assert cue in html                      # every defined moment has a cue
+    assert "fd_sound" in html                   # guarded localStorage persistence
+
+
 def test_health_payload_shape():
     g.init_db()  # ensure the default db exists so schema_version reads back
     payload = g.health_payload()

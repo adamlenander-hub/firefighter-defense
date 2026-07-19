@@ -1465,6 +1465,7 @@ GAME_HTML = """<!DOCTYPE html>
     <button id="startBtn">Einsatz starten</button>
     <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
     <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
+    <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="soundToggle" checked> Ton</label>
     <button id="libBtn">Antons Wissen</button>
     <span id="info" style="color:#9a6a4f; font-size:.9rem;"></span>
   </div>
@@ -1608,6 +1609,97 @@ GAME_HTML = """<!DOCTYPE html>
     var keyIndex = -1;        // keyboard-highlighted build spot (-1 = none chosen yet)
     var keyboardActive = false; // draw the keyboard focus ring once the keyboard is used
     var contrastEnabled = false; // large-text / high-contrast mode
+
+    // --- Friendly sound effects (ITEM-019) -----------------------------------
+    // Sounds are GENERATED in the browser with the Web Audio API — there are NO
+    // audio files, so nothing can fail to load (option A from the analysis). The
+    // firm project rule "an optional part must never crash the page" is honoured
+    // the same way the storage code is: the API is checked ONCE, and every audio
+    // call is wrapped in try/catch. If audio is unsupported or anything throws,
+    // the game simply carries on in silence with nothing shown to the player.
+    var soundEnabled = true;                 // player-facing mute toggle (default: sound ON)
+    var _AudioCtor = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+    var audioSupported = !!_AudioCtor;       // decided once; if false we stay silent forever
+    var audioCtx = null;                     // created lazily on the first user gesture
+    var _lastSoundAt = 0;                    // light throttle so many towers can't stack a harsh pile-up
+
+    // Autoplay-safe: browsers block sound until the player interacts. This is called
+    // from the "Einsatz starten" button (a real user gesture) so the first effects
+    // actually play. Guarded — a failure here just means the game stays quiet.
+    function initAudio(){
+      if (!audioSupported || !soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new _AudioCtor();
+        if (audioCtx.state === 'suspended' && audioCtx.resume) audioCtx.resume();
+      } catch (e){ /* audio unavailable — continue silently */ }
+    }
+
+    // One short, soft tone with a quick fade in/out (no clicks, nothing grating).
+    function playTone(freq, startAt, dur, type, peak){
+      if (!audioCtx) return;
+      try {
+        var t0 = audioCtx.currentTime + (startAt || 0);
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.type = type || 'sine';
+        osc.frequency.setValueAtTime(freq, t0);
+        var vol = (peak == null ? 0.11 : peak);
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(t0); osc.stop(t0 + dur + 0.03);
+      } catch (e){ /* never let a sound break the page */ }
+    }
+
+    // The single guarded entry point every effect goes through. Respects mute and
+    // the one-time support check, keeps sounds short, and lightly throttles the
+    // reactive cues (good/danger/useless) so a frame with several towers firing
+    // can't stack into a grating burst. Win/lose motifs are one-off and bypass it.
+    function playSound(kind){
+      if (!soundEnabled || !audioSupported) return;
+      try {
+        if (!audioCtx) return;                       // engine not unlocked yet — stay silent
+        if (audioCtx.state === 'suspended' && audioCtx.resume) audioCtx.resume();
+        if (kind === 'good' || kind === 'danger' || kind === 'useless'){
+          var now = (audioCtx.currentTime || 0) * 1000;
+          if (now - _lastSoundAt < 110) return;      // collapse same-frame repeats
+          _lastSoundAt = now;
+        }
+        switch (kind){
+          case 'good':                               // warm rising two-note — a correct extinguish
+            playTone(523.25, 0,    0.12, 'sine', 0.10);
+            playTone(783.99, 0.09, 0.16, 'sine', 0.10);
+            break;
+          case 'danger':                             // low soft buzz — a dangerous / wrong tool
+            playTone(150, 0, 0.22, 'sawtooth', 0.07);
+            break;
+          case 'useless':                            // small subtle blip — a tool that does nothing
+            playTone(320, 0, 0.06, 'triangle', 0.045);
+            break;
+          case 'win':                                // short cheerful up-motif at level won
+            playTone(523.25, 0,    0.12, 'sine', 0.10);
+            playTone(659.25, 0.11, 0.12, 'sine', 0.10);
+            playTone(783.99, 0.22, 0.22, 'sine', 0.11);
+            break;
+          case 'lose':                               // gentle falling two-note at level lost
+            playTone(392.00, 0,    0.16, 'sine', 0.09);
+            playTone(261.63, 0.15, 0.28, 'sine', 0.09);
+            break;
+        }
+      } catch (e){ /* an audio failure must never break or freeze the page */ }
+    }
+
+    // Mute persistence — same guarded localStorage pattern as loadContrast/saveContrast;
+    // a browser that blocks storage must never throw. Default is sound ON.
+    function saveSound(on){ try { window.localStorage.setItem('fd_sound', on ? '1':'0'); } catch(e){} }
+    function loadSound(){
+      var on = true;
+      try { var v = window.localStorage.getItem('fd_sound'); if (v !== null) on = (v === '1'); }
+      catch (e){ on = true; }
+      soundEnabled = on;
+      var cb = document.getElementById('soundToggle'); if (cb) cb.checked = on;
+    }
 
     // Progress is stored in the browser so the fixed play order survives a reload.
     // Storage is optional — a browser that blocks it must never crash the page.
@@ -2002,6 +2094,7 @@ GAME_HTML = """<!DOCTYPE html>
           // supply still on: spraying does nothing — cut the supply first
           target.reaction='useless'; target.reactionUntil=performance.now()+500;
           showFeedback(HAZARD_WARN[thaz], 'danger');
+          playSound('danger');
           g.useless++;
           continue;
         }
@@ -2009,15 +2102,18 @@ GAME_HTML = """<!DOCTYPE html>
         if (outcome==='good' || outcome==='weak'){
           g.fires = g.fires.filter(function(f){ return f.id!==target.id; });
           g.budget += EXTINGUISH_REWARD + (outcome==='good' ? SMART_BONUS : 0); updateBudget();
+          playSound('good');
           g.ext++;
         } else if (outcome==='danger'){
           target.progress = Math.min(0.999, target.progress + DANGER_SPEEDUP);
           target.reaction='danger'; target.reactionUntil=performance.now()+500;
           showFeedback(reasonMap[target.cls + '|' + tw.tool], 'danger');
+          playSound('danger');
           g.danger++;
         } else {
           target.reaction='useless'; target.reactionUntil=performance.now()+500;
           showFeedback(reasonMap[target.cls + '|' + tw.tool], 'useless');
+          playSound('useless');
           g.useless++;
         }
       }
@@ -2044,6 +2140,7 @@ GAME_HTML = """<!DOCTYPE html>
                ext:0, danger:0, useless:0, leaked:0, supplies:sup };
     }
     function onStartButton(){
+      initAudio();   // first real user gesture — unlock/resume audio (autoplay-safe)
       if (!game) return;
       if (game.status==='idle'){ game.status='playing'; last=performance.now(); }
       else if (game.status==='won' || game.status==='lost'){
@@ -2309,7 +2406,8 @@ GAME_HTML = """<!DOCTYPE html>
       if (performance.now() > feedbackUntil) document.getElementById('feedback').textContent='';
       render();
       if (game && game.status!==prevStatus){
-        if (game.status==='won' || game.status==='lost') handleEnd();
+        if (game.status==='won'){ playSound('win'); handleEnd(); }
+        else if (game.status==='lost'){ playSound('lose'); handleEnd(); }
         updateControls();
         prevStatus = game.status;
       }
@@ -2492,6 +2590,12 @@ GAME_HTML = """<!DOCTYPE html>
     function loadContrast(){ var on=false; try { on = window.localStorage.getItem('fd_contrast')==='1'; } catch(e){ on=false; } applyContrast(on); }
     document.getElementById('contrastToggle').onchange = function(e){ applyContrast(e.target.checked); saveContrast(e.target.checked); };
     loadContrast();
+
+    // --- Ton / mute toggle (ITEM-019) — same wiring/persistence shape as the toggles
+    //     above. Muted => playSound returns immediately, so nothing is heard.
+    var _soundCb = document.getElementById('soundToggle');
+    if (_soundCb) _soundCb.onchange = function(e){ soundEnabled = e.target.checked; saveSound(e.target.checked); if (soundEnabled) initAudio(); };
+    loadSound();
 
     // --- Spot-based keyboard control (ITEM-020): fully playable without a mouse.
     //     1..N pick an extinguisher; arrows move the build-spot highlight; Enter places;
