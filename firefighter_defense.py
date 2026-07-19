@@ -2021,12 +2021,14 @@ GAME_HTML = """<!DOCTYPE html>
       }
     }
     function drawBuildSpot(x,y){
-      // In high-contrast mode use a bright WHITE dashed ring (thicker, clearer dashes)
-      // so open build spots are easy to spot on the dark field (ITEM-049). Normal
-      // mode keeps its soft blue ring.
-      if (contrastEnabled){ ctx.setLineDash([7,5]); ctx.strokeStyle='#ffffff'; ctx.lineWidth=3.5; }
-      else { ctx.setLineDash([5,6]); ctx.strokeStyle='#bcd0ea'; ctx.lineWidth=2; }
-      ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+      // ITEM-056 (replaces ITEM-049): an open build spot is a solid black circle with
+      // a white border, drawn the SAME in every mode (normal + high-contrast) so it
+      // stands out against any mission background. Radius kept at 24. A thin outer
+      // dark edge keeps the white border readable even on a near-white background.
+      ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2);
+      ctx.fillStyle='#000000'; ctx.fill();
+      ctx.lineWidth=3; ctx.strokeStyle='#ffffff'; ctx.stroke();
+      ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.arc(x,y,25.5,0,Math.PI*2); ctx.stroke();
     }
     // A clear focus ring on the keyboard-highlighted build spot (ITEM-020), so a
     // keyboard player can always see where they are.
@@ -2710,22 +2712,28 @@ GAME_HTML = """<!DOCTYPE html>
       var t=toolMap[tw.tool]||{hex:'#334155', short:'?'};
       var x=tw.spot[0], y=tw.spot[1];
       ctx.beginPath(); ctx.arc(x,y,TOWER_RANGE,0,Math.PI*2); ctx.fillStyle='rgba(47,111,237,.05)'; ctx.fill();
-      var w=26, h=36;
+      // ITEM-055: the placed extinguisher is drawn 50% bigger (26x36 -> 39x54).
+      // Only the DRAWING grows — the build-spot position and the tap/keyboard hit
+      // area (nearestSpot / HIT_RADIUS) are unchanged, so placement is unaffected.
+      var w=39, h=54;
       drawExtShape(ctx, x-w/2, y-h/2+3, w, h, toolColour(t.hex));
-      ctx.fillStyle='#101418'; ctx.font='700 9px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='#101418'; ctx.font='700 12px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText((t.short||'').slice(0,6), x, y+h*0.27);
       ctx.textBaseline='alphabetic';
-      // ITEM-040: a shrinking charge gauge under the tower. The FILL LENGTH is the
-      // cue (greyscale/hc safe, not colour alone); it turns a second, distinct shade
-      // once low so it also reads without colour vision.
+      // ITEM-054 (moves ITEM-040's gauge): a shrinking charge gauge standing
+      // VERTICALLY to the RIGHT of the extinguisher — full at the top, draining
+      // downward as it fires — instead of a horizontal bar underneath. The FILL
+      // LENGTH is the cue (greyscale/hc-safe, not colour alone); it turns a second,
+      // distinct shade once low so it also reads without colour vision.
       var maxC = tw.maxCharge || tw.charge || 1;
       var frac = Math.max(0, Math.min(1, tw.charge / maxC));
-      var gw=w+6, gh=5, gx=x-gw/2, gy=y+h*0.42;
+      var gw=6, gh=h*0.82, gx=x + w/2 + 4, gy=(y - h/2 + 3) + (h - gh)/2;
       ctx.strokeStyle = contrastEnabled ? '#e5e7eb' : '#1f2937'; ctx.lineWidth=1;
       ctx.strokeRect(gx, gy, gw, gh);
       var low = frac <= 0.34;
       ctx.fillStyle = low ? (contrastEnabled?'#fca5a5':'#b91c1c') : (contrastEnabled?'#bbf7d0':'#15803d');
-      ctx.fillRect(gx+1, gy+1, Math.max(0,(gw-2)*frac), gh-2);
+      var fillH = Math.max(0,(gh-2)*frac);
+      ctx.fillRect(gx+1, gy+1+((gh-2)-fillH), gw-2, fillH);
     }
     function drawSprays(){
       var now=performance.now(), keep=[];

@@ -1088,6 +1088,27 @@ def test_charge_gauge_is_drawn_on_the_tower():
     assert "towerChargeFor" in html and "maxCharge" in html
 
 
+def test_extinguisher_bigger_and_gauge_vertical_on_the_right():
+    # ITEM-055: the placed extinguisher is drawn 50% bigger (26x36 -> 39x54).
+    # ITEM-054: the charge gauge is a vertical bar to the RIGHT of the extinguisher,
+    # not a horizontal bar underneath it.
+    html = g.render_game_html()
+    tower = html[html.index("function drawTower(tw){"):html.index("function drawSprays")]
+    assert "var w=39, h=54" in tower            # ITEM-055: 1.5x bigger extinguisher
+    assert "x + w/2 + 4" in tower               # ITEM-054: gauge positioned to the right
+    assert "gh=h*0.82" in tower                 # ITEM-054: gauge is tall (vertical), not a 5px-high bar
+
+
+def test_build_spot_is_solid_black_with_white_border_in_all_modes():
+    # ITEM-056 (replaces ITEM-049): an open build spot is a solid black circle with a
+    # white border, drawn identically whether high-contrast is on or off.
+    html = g.render_game_html()
+    spot = html[html.index("function drawBuildSpot(x,y){"):html.index("function drawKeyHighlight")]
+    assert "fillStyle='#000000'" in spot and "arc(x,y,24" in spot   # solid black disc
+    assert "strokeStyle='#ffffff'" in spot                          # white border
+    assert "contrastEnabled" not in spot                            # same in all modes (no per-mode branch)
+
+
 # --- ITEM-034: water on liquid(B)/cooking-oil(F) fires splits them ------------
 
 def test_water_on_a_liquid_fire_can_split_it_in_two():
