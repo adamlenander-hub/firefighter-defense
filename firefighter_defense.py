@@ -1402,15 +1402,52 @@ GAME_HTML = """<!DOCTYPE html>
     .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: center; }
     .lives { font-size: 1.1rem; }
     button {
-      font: inherit; padding: .35rem .8rem; border-radius: 999px; cursor: pointer;
+      font: inherit; padding: .5rem 1rem; border-radius: 999px; cursor: pointer;
       border: 1px solid #e7c9b3; background: #fff; color: #7c2d12;
+      min-height: 44px;                 /* comfortable finger target (ITEM-020) */
     }
     button.active { background: #ea580c; color: #fff; border-color: #ea580c; }
+    label { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; }
+    label input { width: 20px; height: 20px; }
+    #toolPalette button { min-width: 60px; font-weight: 600; }
     .wrap { width: 100%; max-width: 960px; }
-    canvas { width: 100%; height: auto; border-radius: 16px; box-shadow: 0 10px 30px rgba(124,45,18,.12); background:#f4ead8; display:block; }
+    canvas {
+      width: 100%; height: auto; border-radius: 16px; box-shadow: 0 10px 30px rgba(124,45,18,.12);
+      background:#f4ead8; display:block;
+      touch-action: manipulation;       /* reliable taps, no double-tap zoom delay */
+    }
     .legend { display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; color:#9a6a4f; font-size:.82rem; }
     .legend span::before { content:"● "; }
     .foot { color:#9a6a4f; font-size:.8rem; }
+
+    /* --- Große Schrift / Hoher Kontrast (large text / high contrast) — ITEM-020.
+       An opt-in class on <body>; purely presentational, never touches game logic.
+       The canvas keeps its icon + class-letter + shape signalling; this darkens the
+       page chrome and enlarges text so it reads across a room / on a projector. --- */
+    body.hc { background:#000; color:#fff; font-size:1.12rem; }
+    body.hc h1 { color:#fff; }
+    body.hc .place, body.hc .foot, body.hc #antonMood, body.hc #info { color:#fde047 !important; }
+    body.hc .legend { color:#fff; }
+    body.hc label { color:#fff !important; }
+    body.hc button { background:#111; color:#fff; border:2px solid #fff; }
+    body.hc button.active { background:#fde047; color:#000; border-color:#fde047; }
+    body.hc button:disabled { color:#9ca3af; border-color:#6b7280; }
+    body.hc canvas { background:#0b0b0b; border:2px solid #fff; box-shadow:none; }
+    body.hc #hint, body.hc #feedback, body.hc .legend,
+    body.hc .place, body.hc #antonMood, body.hc label { font-size:1.05rem !important; }
+    body.hc #feedback { color:#fde047 !important; }
+
+    /* --- Portrait / small-screen: cap the board so the extinguisher palette and
+       controls stay on-screen and reachable during play (ITEM-020). --- */
+    @media (max-width: 720px) {
+      body { padding: .5rem; }
+      h1 { font-size: 1.12rem; }
+      .wrap { max-width: 100%; }
+      canvas { width:auto; max-width:100%; max-height:52vh; margin:0 auto; }
+    }
+    @media (orientation: portrait) and (max-width: 900px) {
+      canvas { width:auto; max-width:100%; max-height:48vh; margin:0 auto; }
+    }
   </style>
 </head>
 <body>
@@ -1427,13 +1464,14 @@ GAME_HTML = """<!DOCTYPE html>
     <span id="budget" style="font-weight:600;"></span>
     <button id="startBtn">Einsatz starten</button>
     <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
+    <label style="font-size:.85rem; color:#9a6a4f;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
     <button id="libBtn">Antons Wissen</button>
     <span id="info" style="color:#9a6a4f; font-size:.9rem;"></span>
   </div>
 
   <div class="bar" id="toolPalette"></div>
   <div class="bar" id="hazardControls"></div>
-  <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern.</p>
+  <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Leertaste startet.</p>
   <p id="feedback" style="min-height:1.3em; font-weight:600; text-align:center; margin:.2rem 0;"></p>
 
   <div class="wrap"><canvas id="board" width="960" height="540"></canvas></div>
@@ -1565,6 +1603,11 @@ GAME_HTML = """<!DOCTYPE html>
     var antonFinale = {};     // the finale payload (title/caption/lines/scene)
     var vigRAF = null;        // the reward-scene animation handle (so it can be cancelled)
     var vignetteThenFinale = false; // after this vignette, play the finale?
+    // Tablet / accessibility (ITEM-020) — all additive, desktop mouse unchanged.
+    var HIT_RADIUS = 42;      // build-spot tap/click hit radius in board coords (finger-friendly)
+    var keyIndex = -1;        // keyboard-highlighted build spot (-1 = none chosen yet)
+    var keyboardActive = false; // draw the keyboard focus ring once the keyboard is used
+    var contrastEnabled = false; // large-text / high-contrast mode
 
     // Progress is stored in the browser so the fixed play order survives a reload.
     // Storage is optional — a browser that blocks it must never crash the page.
@@ -1623,6 +1666,21 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.strokeStyle='#a8a29e'; ctx.lineWidth=30; trace(wp); ctx.stroke();
     }
     function drawBuildSpot(x,y){ ctx.setLineDash([6,6]); ctx.strokeStyle='#0369a1'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x,y,22,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
+    // A clear focus ring on the keyboard-highlighted build spot (ITEM-020), so a
+    // keyboard player can always see where they are.
+    function drawKeyHighlight(){
+      if (!keyboardActive || !level || keyIndex<0 || keyIndex>=level.build_spots.length) return;
+      var s=level.build_spots[keyIndex];
+      var pulse=30 + Math.sin(performance.now()/220)*3;
+      ctx.save();
+      ctx.strokeStyle='#f59e0b'; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(s[0],s[1],pulse,0,Math.PI*2); ctx.stroke();
+      ctx.strokeStyle='#78350f'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(s[0],s[1],pulse+3,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#b45309'; ctx.font='bold 12px system-ui'; ctx.textAlign='center';
+      ctx.fillText('▶ Bauplatz ' + (keyIndex+1), s[0], s[1]-pulse-6);
+      ctx.restore();
+    }
     function drawStart(wp){ ctx.fillStyle='#c2410c'; ctx.beginPath(); ctx.arc(wp[0][0],wp[0][1],9,0,Math.PI*2); ctx.fill(); ctx.font='12px system-ui'; ctx.textAlign='center'; ctx.fillText('Start', wp[0][0], wp[0][1]-15); }
     function drawBuilding(b){
       var flashing = game && performance.now() < game.flashUntil;
@@ -2179,6 +2237,7 @@ GAME_HTML = """<!DOCTYPE html>
       drawBackground();
       drawPath(level.path);
       level.build_spots.forEach(function(s, idx){ var tw=towerAt(idx); if (tw) drawTower(tw); else drawBuildSpot(s[0],s[1]); });
+      drawKeyHighlight();
       drawStart(level.path);
       // Before the operation starts, Anton marks where fire will break out.
       if (!game || game.status==='idle') drawSense(level.path);
@@ -2261,7 +2320,7 @@ GAME_HTML = """<!DOCTYPE html>
       fetch('/api/level/'+i).then(function(r){return r.json();}).then(function(data){
         if (data.error) return;
         level = data; game = newGame(level); sprays = []; prevStatus='idle';
-        seen = {}; paused = false; hintShown = false; currentIndex = i;
+        seen = {}; paused = false; hintShown = false; currentIndex = i; keyIndex = -1;
         antonLines = data.anton || {};
         missionKey = data.key; missionNo = data.mission; isCampaign = !!data.campaign;
         document.getElementById('card').style.display = 'none';
@@ -2290,19 +2349,45 @@ GAME_HTML = """<!DOCTYPE html>
       }).catch(function(){});
     }
 
-    // Tap/click a build spot to place the selected tool there.
-    canvas.addEventListener('click', function(e){
-      if (!game || !selectedTool || !level) return;
+    // Tap/click a build spot to place the selected tool there. The screen point is
+    // scaled to board coordinates (works when the board is shrunk on a tablet). The
+    // hit radius is finger-friendly (ITEM-020).
+    function nearestSpot(clientX, clientY){
+      if (!level) return -1;
       var rect=canvas.getBoundingClientRect();
-      var x=(e.clientX-rect.left)*(canvas.width/rect.width);
-      var y=(e.clientY-rect.top)*(canvas.height/rect.height);
+      if (!rect.width || !rect.height) return -1;
+      var x=(clientX-rect.left)*(canvas.width/rect.width);
+      var y=(clientY-rect.top)*(canvas.height/rect.height);
       var spots=level.build_spots, bestI=-1, bestD=null;
       for (var i=0;i<spots.length;i++){
         var d=Math.hypot(spots[i][0]-x, spots[i][1]-y);
-        if (d<=32 && (bestD===null || d<bestD)){ bestD=d; bestI=i; }
+        if (d<=HIT_RADIUS && (bestD===null || d<bestD)){ bestD=d; bestI=i; }
       }
-      if (bestI>=0) placeTower(bestI, selectedTool);
-    });
+      return bestI;
+    }
+    function boardPlaceAt(clientX, clientY){
+      if (!game || !selectedTool || !level) return;
+      var i=nearestSpot(clientX, clientY);
+      if (i>=0){ keyIndex=i; placeTower(i, selectedTool); }
+    }
+    // ONE input path so a single tap can never place twice (touch + synthetic-click
+    // double-fire is avoided): use Pointer Events where supported (covers mouse, touch
+    // and pen); otherwise fall back to click + touchend, with touchend suppressing the
+    // synthetic click. Desktop mouse behaves exactly as before.
+    if (window.PointerEvent){
+      canvas.addEventListener('pointerup', function(e){
+        if (e.pointerType==='mouse' && e.button!==0) return;   // left mouse only
+        boardPlaceAt(e.clientX, e.clientY);
+      });
+    } else {
+      canvas.addEventListener('click', function(e){ boardPlaceAt(e.clientX, e.clientY); });
+      canvas.addEventListener('touchend', function(e){
+        if (e.changedTouches && e.changedTouches.length){
+          e.preventDefault();                                  // stop the following synthetic click
+          var t=e.changedTouches[0]; boardPlaceAt(t.clientX, t.clientY);
+        }
+      }, {passive:false});
+    }
 
     // The level bar shows the four story missions in play order (locked until the
     // one before is won) plus the training level as a free-choice side level (ITEM-027).
@@ -2395,6 +2480,59 @@ GAME_HTML = """<!DOCTYPE html>
     };
     document.getElementById('vigClose').onclick = closeVignette;
     document.getElementById('finClose').onclick = closeFinale;
+
+    // --- Große Schrift / Hoher Kontrast (ITEM-020) — presentational only, persisted
+    //     with the same guarded localStorage pattern (a storage failure never throws).
+    function applyContrast(on){
+      contrastEnabled=!!on;
+      if (document.body){ if (on) document.body.classList.add('hc'); else document.body.classList.remove('hc'); }
+      var cb=document.getElementById('contrastToggle'); if (cb) cb.checked=!!on;
+    }
+    function saveContrast(on){ try { window.localStorage.setItem('fd_contrast', on?'1':'0'); } catch(e){} }
+    function loadContrast(){ var on=false; try { on = window.localStorage.getItem('fd_contrast')==='1'; } catch(e){ on=false; } applyContrast(on); }
+    document.getElementById('contrastToggle').onchange = function(e){ applyContrast(e.target.checked); saveContrast(e.target.checked); };
+    loadContrast();
+
+    // --- Spot-based keyboard control (ITEM-020): fully playable without a mouse.
+    //     1..N pick an extinguisher; arrows move the build-spot highlight; Enter places;
+    //     Space starts/restarts. Never hijacks a focused form control or button, and is
+    //     inert while a modal/overlay is open, so it can't interfere with mouse/touch.
+    function isFormFocus(){
+      var el=document.activeElement; if (!el) return false;
+      var tag=(el.tagName||'').toUpperCase();
+      return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||el.isContentEditable;
+    }
+    function isButtonFocus(){ var el=document.activeElement; return !!(el && (el.tagName||'').toUpperCase()==='BUTTON'); }
+    function anyOverlayOpen(){
+      var ids=['card','recap','lib','vignette','finale'];
+      for (var i=0;i<ids.length;i++){ var el=document.getElementById(ids[i]);
+        if (el && el.style.display && el.style.display!=='none') return true; }
+      return false;
+    }
+    function moveHighlight(delta){
+      if (!level || !level.build_spots.length) return;
+      keyboardActive=true;
+      if (keyIndex<0){ keyIndex=(delta>0?0:level.build_spots.length-1); }
+      else { keyIndex=(keyIndex+delta+level.build_spots.length)%level.build_spots.length; }
+    }
+    function selectToolSlot(n){ if (!toolsList || n<1 || n>toolsList.length) return; selectedTool=toolsList[n-1].id; updateBudget(); }
+    document.addEventListener('keydown', function(e){
+      if (anyOverlayOpen() || isFormFocus()) return;
+      var k=e.key;
+      if (k>='1' && k<='9'){ selectToolSlot(parseInt(k,10)); e.preventDefault(); return; }
+      if (k==='ArrowRight'||k==='ArrowDown'){ moveHighlight(1); e.preventDefault(); return; }
+      if (k==='ArrowLeft'||k==='ArrowUp'){ moveHighlight(-1); e.preventDefault(); return; }
+      if (k==='Enter'){
+        if (isButtonFocus()) return;               // let a focused button activate normally
+        keyboardActive=true;
+        if (game && selectedTool && keyIndex>=0) placeTower(keyIndex, selectedTool);
+        e.preventDefault(); return;
+      }
+      if (k===' '||k==='Spacebar'){
+        if (isButtonFocus()) return;               // let a focused button activate normally
+        onStartButton(); e.preventDefault(); return;
+      }
+    });
     // Load classes, tools, the fire-safety matrix, and Anton's arc first, then levels.
     Promise.all([loadClasses(), loadTools(), loadMatrix(), loadAnton()]).then(function(){ buildLevelBar(); });
     loadStatus();
