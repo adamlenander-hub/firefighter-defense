@@ -753,7 +753,10 @@ LEVELS = [
         "place_de": "Die Festbühne beim Jubiläumsfest",
         "size": {"w": 960, "h": 540},
         "path": [[20, 200], [220, 200], [220, 430], [500, 430], [500, 150], [760, 150], [760, 400]],
-        "build_spots": [[120, 320], [360, 300], [360, 100], [640, 280], [690, 60]],
+        # ITEM-032: spot 2 was [360,100] = 148.7px from the path, beyond a tower's
+        # 130px reach (a tower there hit nothing). Moved to [440,90] = 84.9px out —
+        # still ≥46px clear of the road, now comfortably within reach of the bend.
+        "build_spots": [[120, 320], [360, 300], [440, 90], [640, 280], [690, 60]],
         "building": {"x": 840, "y": 400, "lives": 3, "name_de": "Festbühne"},
         "budget": 300,
         "waves": [
@@ -778,6 +781,49 @@ DANGER_SPEEDUP = 0.10      # a dangerous mismatch makes the fire lurch this far 
 # A build spot's centre must be at least this far from the path so a placed tower never
 # overlaps the road (path half-width ~20 + tower radius ~20, plus a little gap).
 BUILD_SPOT_CLEARANCE = 46.0
+
+# --- ITEM-041: fires resist being put out — a tool's hit wears them down rather
+# than clearing them in one shot. FIRE_HP is the resistance every fire starts with;
+# a hit's damage is subtracted from it and the fire only goes out once it reaches
+# zero. The IDEAL ("good") tool still clears a fire in a single hit — unchanged pace,
+# so every place-geometry/timing tuning done for earlier items keeps working — while
+# the merely ACCEPTABLE ("weak") tool needs two hits, visibly smouldering a moment
+# longer in between (drawFire shrinks the flame toward the kill). Useless and
+# dangerous tools NEVER remove any hp, at any duration — that invariant is unchanged
+# and is guarded by tests.
+FIRE_HP = 1.0              # every fire's starting extinguish-resistance
+GOOD_HIT_DAMAGE = 1.0      # the ideal tool: one hit clears a fire (kept instant)
+WEAK_HIT_DAMAGE = 0.55     # the acceptable tool: needs two hits to fully wear it down
+
+# --- ITEM-040: extinguishers deplete. Each placed tower gets a limited number of
+# shots ("charge"); once it fires its last shot it's removed, freeing the spot so the
+# player has to notice and re-buy. DECISION: charge is only spent on a shot that
+# actually discharges AT the fire — a correct/acceptable hit, or a dangerous
+# mismatch that backfires — never on a shot that's completely useless (the tool
+# can't touch that class at all, e.g. spraying a fire whose supply hazard is still
+# on). This keeps a tower correctly aimed at ITS class of fire from being bankrupted
+# by an unrelated fire that merely wanders through its range, while still making a
+# genuinely DANGEROUS choice cost exactly as much charge as a right one (the wrong
+# tool is never cheaper). Charge tightens across the four campaign missions
+# (mission 1 the most generous, mission 4 the tightest); levels outside the
+# campaign use the generous baseline.
+TOWER_CHARGE_BASE = 8
+CAMPAIGN_CHARGE_FACTOR = {1: 1.0, 2: 0.85, 3: 0.7, 4: 0.55}
+MIN_TOWER_CHARGE = 3       # floor so no mission can ever make a tower useless on arrival
+
+
+def tower_charge_for(level: dict) -> int:
+    """How many shots a freshly-placed tower gets on this level (ITEM-040)."""
+    factor = CAMPAIGN_CHARGE_FACTOR.get(level.get("mission"), 1.0)
+    return max(MIN_TOWER_CHARGE, round(TOWER_CHARGE_BASE * factor))
+
+
+# --- ITEM-034: water on a liquid (B) or cooking-oil (F) fire is dangerous — it can
+# throw burning liquid, splitting the fire in two. MAX_ACTIVE_FIRES caps how many
+# fires can ever be alive on the path at once, so a chain of splits can never make a
+# level unwinnable-by-explosion — beyond the cap, a dangerous hit still lurches the
+# fire toward the building (the ITEM-010 reaction) but no longer spawns a second one.
+MAX_ACTIVE_FIRES = 14
 
 
 def build_schedule(level: dict) -> list:
@@ -844,7 +890,7 @@ class GameState:
                 self.stats["extinguished"] += 1
                 self.spawned += 1
                 continue
-            self.fires.append({"id": self._next_id, "class": cls, "progress": 0.0})
+            self.fires.append({"id": self._next_id, "class": cls, "progress": 0.0, "hp": FIRE_HP})
             self._next_id += 1
             self.spawned += 1
         # Towers fire at the nearest fire in range. The outcome depends on whether the
@@ -861,28 +907,56 @@ class GameState:
             haz = self._gated_class.get(target["class"])
             if haz and self.supplies.get(haz) == "on":
                 # The supply is still on: spraying does nothing. The lesson is to cut
-                # the supply first (the browser shows Anton's warning).
+                # the supply first (the browser shows Anton's warning). Nothing was
+                # actually discharged at a fire that could react to it, so — ITEM-040 —
+                # no charge is spent (a fire the tool can't touch at all doesn't drain
+                # the canister; see the charge comment above for the full rule).
                 target["reaction"] = "useless"
                 self.stats["useless_hits"] += 1
                 continue
             outcome = self.matrix.get((target["class"], tw["tool"]))
             if outcome in ("good", "weak"):
-                # Correct (or acceptable) tool: fire goes out, budget earned back;
-                # the ideal ("good") tool earns a small smart-play bonus on top.
-                self.fires = [f for f in self.fires if f["id"] != target["id"]]
-                self.budget += EXTINGUISH_REWARD + (SMART_BONUS if outcome == "good" else 0)
-                self.stats["extinguished"] += 1
+                # ITEM-040: this shot actually did something to the fire, so it costs
+                # a charge. ITEM-041: a correct hit wears the fire's resistance down
+                # rather than clearing it outright — the ideal ("good") tool still
+                # does it in one hit, the merely acceptable ("weak") one needs
+                # another. Reward + smart-play bonus are only paid out on the actual
+                # put-out.
+                tw["charge"] -= 1
+                target["hp"] = target.get("hp", FIRE_HP) - (GOOD_HIT_DAMAGE if outcome == "good" else WEAK_HIT_DAMAGE)
+                if target["hp"] <= 1e-9:
+                    self.fires = [f for f in self.fires if f["id"] != target["id"]]
+                    self.budget += EXTINGUISH_REWARD + (SMART_BONUS if outcome == "good" else 0)
+                    self.stats["extinguished"] += 1
+                else:
+                    target["reaction"] = "hit"
             elif outcome == "danger":
                 # Dangerous mismatch (e.g. water on electrical or on cooking oil):
                 # it backfires — the fire flares and lurches toward the building. No
-                # budget. This is the strongest teaching moment.
+                # budget. This is the strongest teaching moment. ITEM-040: a
+                # dangerous mismatch DID discharge the extinguisher (just badly), so
+                # it costs a charge too — the wrong choice is never cheaper.
+                tw["charge"] -= 1
                 target["progress"] = min(0.999, target["progress"] + DANGER_SPEEDUP)
                 target["reaction"] = "danger"
                 self.stats["danger_hits"] += 1
+                # ITEM-034: water thrown on a liquid or cooking-oil fire can split it
+                # in two — a second dramatization of "never water on B/F" — capped so
+                # a chain of splits can never make a level unwinnable.
+                if tw["tool"] == "water" and target["class"] in ("B", "F") and len(self.fires) < MAX_ACTIVE_FIRES:
+                    self.fires.append({
+                        "id": self._next_id, "class": target["class"],
+                        "progress": max(0.0, target["progress"] - 0.05), "hp": FIRE_HP,
+                    })
+                    self._next_id += 1
             else:
-                # Useless tool: nothing happens, the shot is wasted, no budget.
+                # Useless tool: nothing happens, the shot is wasted, no budget, and
+                # (ITEM-040) no charge — an extinguisher that plainly can't touch this
+                # class of fire is never even discharged.
                 target["reaction"] = "useless"
                 self.stats["useless_hits"] += 1
+        # ITEM-040: a tower with no charge left is spent — remove it and free the spot.
+        self.towers = [tw for tw in self.towers if tw["charge"] > 0]
         # Move fires; any that reach the building cost a life and are removed.
         still = []
         for f in self.fires:
@@ -923,12 +997,23 @@ class GameState:
         if self.budget < cost:
             return (False, "not enough budget")
         self.budget -= cost
+        charge = tower_charge_for(self.level)
         self.towers.append({
             "id": self._next_tower_id, "spot_index": spot_index,
             "spot": spots[spot_index], "tool": tool_id, "cooldown": 0.0,
+            "charge": charge, "max_charge": charge,   # ITEM-040: limited shots
         })
         self._next_tower_id += 1
         return (True, "ok")
+
+    def remove_tower(self, spot_index: int) -> bool:
+        """ITEM-042: switch off / remove a (possibly wrongly-placed) extinguisher,
+        freeing its spot. NO REFUND — spent money is gone, on purpose (Adam's
+        decision), so removal can never be used to cheese a win by recycling budget.
+        Returns True if a tower was actually removed."""
+        before = len(self.towers)
+        self.towers = [tw for tw in self.towers if tw["spot_index"] != spot_index]
+        return len(self.towers) < before
 
     def shut_off(self, hazard: str) -> int:
         """Cut a supply (ITEM-016): 'gas' or 'power'. The fires it was feeding go out,
@@ -1214,16 +1299,24 @@ def check_narration() -> tuple[bool, list]:
 def _play_out(level: dict, placements: list, cut=(), dt: float = 1 / 30.0) -> dict:
     """Play a level to the end with a player who buys the given towers (spot, tool)
     as soon as the budget allows, optionally cutting supplies (gas/power) at the
-    start, then reports the recap. Deterministic."""
+    start, then reports the recap. Deterministic.
+
+    ITEM-040 note: `placements` is treated as a standing order — "keep this spot
+    holding this tool" — not a one-time shopping list. A tower's charge runs out
+    over a long level, so a safe player notices the empty spot and re-buys the same
+    tool there; this loop does the same, every tick, for as long as the budget
+    allows. This is what lets a correct, safe strategy always refill/replace in
+    time and win — it never helps an UNSAFE tool, because a tool that never
+    extinguishes anything never earns the budget back to keep re-buying."""
     st = GameState(level)
     st.status = "playing"
     for hazard in cut:
         st.shut_off(hazard)
-    queue = list(placements)
     t = 0.0
     while st.status == "playing" and t < 180:
-        while queue and st.place_tower(queue[0][0], queue[0][1])[0]:
-            queue.pop(0)
+        for spot_index, tool_id in placements:
+            if not any(tw["spot_index"] == spot_index for tw in st.towers):
+                st.place_tower(spot_index, tool_id)
         st.advance(dt)
         t += dt
     return st.recap()
@@ -1487,7 +1580,7 @@ GAME_HTML = """<!DOCTYPE html>
 
   <div class="bar" id="toolPalette"></div>
   <div class="bar" id="hazardControls"></div>
-  <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Leertaste startet.</p>
+  <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Löscher leeren sich (Anzeige am Turm) und müssen ersetzt werden. Falsch gebaut? Ohne gewählten Löscher auf den Turm tippen, um ihn abzubauen (keine Rückerstattung). Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Rücktaste/Entf baut ab, Leertaste startet.</p>
   <p id="feedback" style="min-height:1.3em; font-weight:600; text-align:center; margin:.2rem 0;"></p>
 
   <div class="wrap"><canvas id="board" width="960" height="540"></canvas></div>
@@ -1576,6 +1669,23 @@ GAME_HTML = """<!DOCTYPE html>
     var FIRE_PX_PER_SEC = 90.0;
     var TOWER_RANGE = 130.0, TOWER_COOLDOWN = 0.7, EXTINGUISH_REWARD = 12;
     var SMART_BONUS = 6, DANGER_SPEEDUP = 0.10;
+    // ITEM-041: fires resist being put out — see the Python FIRE_HP/*_HIT_DAMAGE
+    // comment for the full rule (good = one hit, weak = two).
+    var FIRE_HP = 1.0, GOOD_HIT_DAMAGE = 1.0, WEAK_HIT_DAMAGE = 0.55;
+    // ITEM-040: extinguishers deplete — see the Python TOWER_CHARGE_BASE/
+    // CAMPAIGN_CHARGE_FACTOR comment for the full rule (charge tightens mission by
+    // mission; only a shot that actually discharges AT the fire — good/weak/danger,
+    // never a fully-useless one — spends it).
+    var TOWER_CHARGE_BASE = 8;
+    var CAMPAIGN_CHARGE_FACTOR = {1: 1.0, 2: 0.85, 3: 0.7, 4: 0.55};
+    var MIN_TOWER_CHARGE = 3;
+    function towerChargeFor(lv){
+      var factor = (lv && lv.mission && CAMPAIGN_CHARGE_FACTOR[lv.mission]) || 1.0;
+      return Math.max(MIN_TOWER_CHARGE, Math.round(TOWER_CHARGE_BASE * factor));
+    }
+    // ITEM-034: caps how many fires can ever be alive at once, so a chain of water
+    // splitting a liquid/cooking-oil fire in two can never make a level unwinnable.
+    var MAX_ACTIVE_FIRES = 14;
     // Supply-hazard mechanic (ITEM-016), mirroring the server. Kept in step with the
     // Python HAZARD_* constants.
     var HAZARD_CLASS = {gas: 'C', power: 'electrical'};
@@ -1910,7 +2020,14 @@ GAME_HTML = """<!DOCTYPE html>
         ctx.strokeStyle=shade(road, contrastEnabled?0.4:-0.08); ctx.lineWidth=3; ctx.setLineDash([12,14]); trace(wp); ctx.stroke(); ctx.setLineDash([]);
       }
     }
-    function drawBuildSpot(x,y){ ctx.setLineDash([5,6]); ctx.strokeStyle = contrastEnabled ? '#3b4657' : '#bcd0ea'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
+    function drawBuildSpot(x,y){
+      // In high-contrast mode use a bright WHITE dashed ring (thicker, clearer dashes)
+      // so open build spots are easy to spot on the dark field (ITEM-049). Normal
+      // mode keeps its soft blue ring.
+      if (contrastEnabled){ ctx.setLineDash([7,5]); ctx.strokeStyle='#ffffff'; ctx.lineWidth=3.5; }
+      else { ctx.setLineDash([5,6]); ctx.strokeStyle='#bcd0ea'; ctx.lineWidth=2; }
+      ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+    }
     // A clear focus ring on the keyboard-highlighted build spot (ITEM-020), so a
     // keyboard player can always see where they are.
     function drawKeyHighlight(){
@@ -1933,10 +2050,55 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.fillStyle=cssv('--muted')||'#5b6b7f'; ctx.font='600 12px system-ui'; ctx.textAlign='center'; ctx.fillText('Start', wp[0][0], wp[0][1]-20);
     }
     // Two-tone flat house; KEEPS the red damage flash + the HTML lives display.
+    // ITEM-033: how battered the building looks, driven by remaining lives (0 =
+    // pristine .. 3 = smoking ruin). Presentation only — the lose condition itself
+    // is still lives<=0 in advance(), completely unchanged.
+    function buildingDamageStage(){
+      if (!game || !game.level || !game.level.building) return 0;
+      var start = game.level.building.lives || 1;
+      var remainFrac = Math.max(0, game.lives) / start;
+      if (remainFrac <= 0) return 3;
+      if (remainFrac <= 0.4) return 2;
+      if (remainFrac < 1) return 1;
+      return 0;
+    }
+    function drawSoot(x,bodyY,W,bodyH,hc){                 // light damage: soot streaks
+      ctx.save(); ctx.globalAlpha = hc?0.55:0.32; ctx.fillStyle = hc?'#000':'#2b2b2b';
+      for (var i=0;i<3;i++){
+        var sx=x+W*(0.18+i*0.32);
+        ctx.beginPath(); ctx.moveTo(sx-6,bodyY+bodyH*0.18); ctx.quadraticCurveTo(sx-2,bodyY-8,sx+7,bodyY-20);
+        ctx.lineTo(sx+2,bodyY-20); ctx.quadraticCurveTo(sx-6,bodyY-2,sx,bodyY+bodyH*0.18); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+    function drawCracksAndLick(x,bodyY,W,bodyH,yTop,hc){   // heavy damage: cracks + a flame lick
+      ctx.save(); ctx.strokeStyle = hc?'#fff':'#1f2937'; ctx.lineWidth=1.4; ctx.globalAlpha=0.6;
+      ctx.beginPath();
+      ctx.moveTo(x+W*0.15,bodyY+4); ctx.lineTo(x+W*0.22,bodyY+bodyH*0.4); ctx.lineTo(x+W*0.14,bodyY+bodyH*0.72);
+      ctx.moveTo(x+W*0.82,bodyY+6); ctx.lineTo(x+W*0.76,bodyY+bodyH*0.5); ctx.lineTo(x+W*0.85,bodyY+bodyH*0.85);
+      ctx.stroke(); ctx.restore();
+      var flick = 0.5+0.5*Math.sin(performance.now()*0.006);
+      ctx.save(); ctx.globalAlpha = 0.65+0.3*flick; ctx.fillStyle = hc?'#ffb703':'#f59e0b';
+      ctx.beginPath(); ctx.moveTo(x+W-4, yTop+10); ctx.quadraticCurveTo(x+W+7,yTop-3,x+W-2,yTop-15);
+      ctx.quadraticCurveTo(x+W-11,yTop-3,x+W-4,yTop+10); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    function drawSmokeRuin(bx, yTop, hc){                  // zero lives: rising smoke, no flame
+      var now=performance.now()*0.001;
+      ctx.save(); ctx.fillStyle = hc?'rgba(255,255,255,.6)':'rgba(90,90,90,.55)';
+      for (var i=0;i<3;i++){
+        var p=((now*0.28+i*0.33)%1), sx=bx+(i-1)*15, sy=yTop-8-p*46;
+        ctx.globalAlpha = Math.max(0,0.55*(1-p));
+        ctx.beginPath(); ctx.arc(sx, sy, 6+11*p, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
     function drawBuilding(b){
       var flashing = game && performance.now() < game.flashUntil;
       var hc=contrastEnabled;
+      var stage = buildingDamageStage();
       var cream = flashing ? (hc?'#7a2b1e':'#f2b0a0') : (hc?'#e9d9b8':'#f3e4c2');
+      if (stage>=3) cream = hc?'#2b2f36':'#5b5348';        // charred, smoke-stained walls
+      else if (stage===2) cream = shade(cream,-0.10);
       var W=94, H=76, x=b.x-W/2, yTop=b.y-H/2;
       var bodyY=yTop+18, bodyH=H-18;
       // body — TONE1 + a TONE2 shadow plane on the right third
@@ -1944,16 +2106,21 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.save(); rr(ctx,x,bodyY,W,bodyH,12); ctx.clip(); ctx.fillStyle=shade(cream,-0.12); ctx.fillRect(x+W*0.66,bodyY,W*0.34,bodyH); ctx.restore();
       // roof — TONE1 red (turns bright red on damage flash) + TONE2 darker eave
       var red = flashing ? (hc?'#ff5a4d':'#dc2626') : (cssv('--red')||'#e4572e');
+      if (stage>=3) red = hc?'#33363c':'#3f3a34';          // burnt-out roof, no more red
       ctx.fillStyle=red; ctx.beginPath(); ctx.moveTo(x-6,bodyY+4); ctx.lineTo(x+W/2,yTop-8); ctx.lineTo(x+W+6,bodyY+4); ctx.closePath(); ctx.fill();
       ctx.fillStyle=shade(red,-0.2); ctx.fillRect(x-6,bodyY,W+12,6);
-      // door + window — two-tone blue
-      var blue=cssv('--blue')||'#2f6fed';
+      // door + window — two-tone blue (dark/unlit once it's a ruin)
+      var blue=cssv('--blue')||'#2f6fed', lit = stage<3;
       ctx.fillStyle=shade(blue,-0.15); rr(ctx,x+W/2-14,bodyY+18,28,bodyH-18,6); ctx.fill();
-      ctx.fillStyle=blue; rr(ctx,x+W/2-10,bodyY+22,20,bodyH-22,4); ctx.fill();
-      ctx.fillStyle=shade(blue,0.55); rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
+      ctx.fillStyle= lit ? blue : shade(blue,-0.5); rr(ctx,x+W/2-10,bodyY+22,20,bodyH-22,4); ctx.fill();
+      ctx.fillStyle= lit ? shade(blue,0.55) : shade(blue,-0.35); rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
       // name label
       ctx.fillStyle=cssv('--ink')||'#1f2937'; ctx.font='700 13px system-ui'; ctx.textAlign='center';
       ctx.fillText(b.name_de||'Gebäude', b.x, bodyY+bodyH+16);
+      // ITEM-033: the staged damage overlay itself
+      if (stage>=1) drawSoot(x,bodyY,W,bodyH,hc);
+      if (stage===2) drawCracksAndLick(x,bodyY,W,bodyH,yTop,hc);
+      if (stage>=3) drawSmokeRuin(b.x, yTop, hc);
     }
     // --- ITEM-039: distinctive animated fire characters, one per class ----------
     // Each fire is a bigger evil-faced character whose SHAPE + idle animation reflect
@@ -2059,28 +2226,42 @@ GAME_HTML = """<!DOCTYPE html>
       var col = classColour(f.cls);
       var hc = contrastEnabled;
       var reacting = f.reaction && performance.now() < (f.reactionUntil||0);
-      var s = 26, x = p[0], y = p[1];                 // a bit bigger than before
+      var s = 26, x = p[0], y = p[1];                 // s stays the layout unit for badge/icon/rings
+      var fs = s * 1.9;                                // flame size — roughly double, CHARACTER only
+      var baseY = y + s*0.55;                          // base anchor line on the path
       var tt = performance.now()*0.001;
       var ph = (f.id||0)*1.7;                          // per-fire phase (no lockstep)
-      // reaction rings — KEEP the exact shapes (solid red = danger, dashed grey = useless)
-      if (reacting && f.reaction==='danger'){
-        ctx.beginPath(); ctx.arc(x,y,s+8,0,Math.PI*2); ctx.strokeStyle='#b91c1c'; ctx.lineWidth=4; ctx.stroke();
-      } else if (reacting && f.reaction==='useless'){
-        ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(x,y,s+7,0,Math.PI*2); ctx.strokeStyle='#9ca3af'; ctx.lineWidth=3; ctx.stroke(); ctx.setLineDash([]);
+      // ITEM-041 + ITEM-051 merged: the fire visibly RESISTS being worn down — the
+      // flame character shrinks toward the kill as hp drops (greyscale/hc-safe: a
+      // size cue, not a colour cue), plus a dashed amber "resisting" ring. Adam's
+      // ITEM-051 bigger, base-anchored flame (fs) is the full-health size; it scales
+      // down with remaining hp while the base stays anchored on the path.
+      var hpFrac = (f.hp===undefined) ? 1 : Math.max(0, Math.min(1, f.hp));
+      var flameScale = fs * (0.62 + 0.38*hpFrac);      // shrinks as the fire is worn down
+      if (hpFrac < 0.999 && hpFrac > 0){
+        ctx.setLineDash([3,3]); ctx.beginPath(); ctx.arc(x, baseY - fs*0.6, fs*0.9, 0, Math.PI*2);
+        ctx.strokeStyle = hc ? '#fde68a' : '#d97706'; ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]);
       }
-      // the distinctive animated character (per type)
-      ctx.save(); ctx.translate(x,y);
-      drawFireCharacter(ctx, f.cls, s, col, tt, ph, hc);
+      // reaction rings — KEEP the exact shapes (solid red = danger, dashed grey = useless), recentred on the taller flame
+      if (reacting && f.reaction==='danger'){
+        ctx.beginPath(); ctx.arc(x,baseY - fs*0.6,fs*1.05,0,Math.PI*2); ctx.strokeStyle='#b91c1c'; ctx.lineWidth=4; ctx.stroke();
+      } else if (reacting && f.reaction==='useless'){
+        ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(x,baseY - fs*0.6,fs*1.0,0,Math.PI*2); ctx.strokeStyle='#9ca3af'; ctx.lineWidth=3; ctx.stroke(); ctx.setLineDash([]);
+      }
+      // the distinctive animated character (per type) — Adam's enlarged base-anchored
+      // flame, scaled down by remaining hp (ITEM-041) so it shrinks as it goes out.
+      ctx.save(); ctx.translate(x, baseY - flameScale*0.72);
+      drawFireCharacter(ctx, f.cls, flameScale, col, tt, ph, hc);
       ctx.restore();
-      // letter badge (white circle + dark letter) — survives greyscale, KEPT
+      // letter badge (white circle + dark letter) — survives greyscale, KEPT size (from s), moved clear of the tall flame
       ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.arc(x+s*0.72,y-s*0.72,s*0.42,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x+fs*0.62,baseY - fs*1.15,s*0.42,0,Math.PI*2); ctx.fill(); ctx.stroke();
       ctx.fillStyle='#101418'; ctx.font='700 '+(s*0.62)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(cls.letter||'?', x+s*0.72, y-s*0.70);
-      // class icon below — KEPT
-      ctx.font=(s*0.7)+'px system-ui'; ctx.fillStyle='#101418'; ctx.fillText(cls.icon||'🔥', x, y+s*1.5);
-      // danger warning glyph — KEPT
-      if (reacting && f.reaction==='danger'){ ctx.font='15px system-ui'; ctx.fillText('⚠️', x, y-s-14); }
+      ctx.fillText(cls.letter||'?', x+fs*0.62, baseY - fs*1.15);
+      // class icon below the burning object — KEPT
+      ctx.font=(s*0.7)+'px system-ui'; ctx.fillStyle='#101418'; ctx.fillText(cls.icon||'🔥', x, baseY + s*1.0);
+      // danger warning glyph above the taller flame tip — KEPT
+      if (reacting && f.reaction==='danger'){ ctx.font='15px system-ui'; ctx.fillText('⚠️', x, baseY - fs*1.72 - 12); }
       ctx.textBaseline='alphabetic';
     }
     function drawOverlay(){
@@ -2354,7 +2535,7 @@ GAME_HTML = """<!DOCTYPE html>
           // its supply is already cut — this fire never really starts (counted handled)
           g.ext++; g.spawned++; continue;
         }
-        g.fires.push({id:g.nextId++, cls:scls, progress:0}); g.spawned++;
+        g.fires.push({id:g.nextId++, cls:scls, progress:0, hp:FIRE_HP}); g.spawned++;
       }
       // towers fire at the nearest fire in range; the outcome depends on the matrix
       for (var ti=0; ti<g.towers.length; ti++){
@@ -2367,7 +2548,8 @@ GAME_HTML = """<!DOCTYPE html>
         sprays.push({x1:tw.spot[0], y1:tw.spot[1], x2:tp[0], y2:tp[1], until:performance.now()+120});
         var thaz = HAZARD_CLASS_OF_IN(g, target.cls);
         if (thaz && g.supplies[thaz]==='on'){
-          // supply still on: spraying does nothing — cut the supply first
+          // supply still on: spraying does nothing — cut the supply first. ITEM-040:
+          // a shot that plainly can't touch this fire never spends any charge.
           target.reaction='useless'; target.reactionUntil=performance.now()+500;
           showFeedback(HAZARD_WARN[thaz], 'danger');
           playSound('danger');
@@ -2376,23 +2558,45 @@ GAME_HTML = """<!DOCTYPE html>
         }
         var outcome = matrixMap[target.cls + '|' + tw.tool];
         if (outcome==='good' || outcome==='weak'){
-          g.fires = g.fires.filter(function(f){ return f.id!==target.id; });
-          g.budget += EXTINGUISH_REWARD + (outcome==='good' ? SMART_BONUS : 0); updateBudget();
+          // ITEM-040: this shot actually discharged at the fire, so it costs a charge.
+          // ITEM-041: it wears the fire's resistance down — "good" clears it in one
+          // hit, "weak" needs another — and the reward + smart bonus are only paid
+          // out on the actual put-out.
+          tw.charge--;
+          var dmg = (outcome==='good') ? GOOD_HIT_DAMAGE : WEAK_HIT_DAMAGE;
+          target.hp = (target.hp===undefined ? FIRE_HP : target.hp) - dmg;
+          if (target.hp <= 1e-9){
+            g.fires = g.fires.filter(function(f){ return f.id!==target.id; });
+            g.budget += EXTINGUISH_REWARD + (outcome==='good' ? SMART_BONUS : 0); updateBudget();
+            g.ext++;
+          } else {
+            target.reaction='hit'; target.reactionUntil=performance.now()+400;
+          }
           playSound('good');
-          g.ext++;
         } else if (outcome==='danger'){
+          // ITEM-040: a dangerous mismatch DID discharge the extinguisher (badly),
+          // so it costs a charge too — the wrong choice is never cheaper.
+          tw.charge--;
           target.progress = Math.min(0.999, target.progress + DANGER_SPEEDUP);
           target.reaction='danger'; target.reactionUntil=performance.now()+500;
           showFeedback(reasonMap[target.cls + '|' + tw.tool], 'danger');
           playSound('danger');
           g.danger++;
+          // ITEM-034: water on a liquid/cooking-oil fire can split it in two.
+          if (tw.tool==='water' && (target.cls==='B' || target.cls==='F') && g.fires.length < MAX_ACTIVE_FIRES){
+            g.fires.push({id:g.nextId++, cls:target.cls, progress:Math.max(0, target.progress-0.05), hp:FIRE_HP});
+          }
         } else {
+          // Useless tool: nothing happens, the shot is wasted, no budget, and
+          // (ITEM-040) no charge.
           target.reaction='useless'; target.reactionUntil=performance.now()+500;
           showFeedback(reasonMap[target.cls + '|' + tw.tool], 'useless');
           playSound('useless');
           g.useless++;
         }
       }
+      // ITEM-040: a tower with no charge left is spent — remove it, freeing the spot.
+      g.towers = g.towers.filter(function(tw){ return tw.charge > 0; });
       // move fires; arrivals cost a life
       var still=[];
       for (var i=0;i<g.fires.length;i++){
@@ -2400,7 +2604,7 @@ GAME_HTML = """<!DOCTYPE html>
         if (f.progress>=1){ g.lives--; g.leaked++; g.flashUntil=performance.now()+350; } else still.push(f);
       }
       g.fires=still;
-      if (g.lives<=0){ g.lives=0; g.status='lost'; return; }
+      if (g.lives<=0){ g.lives=0; g.status='lost'; if (!g.fledAt) g.fledAt=performance.now(); return; }
       if (g.spawned>=g.schedule.length && g.fires.length===0){ g.status='won'; }
     }
 
@@ -2412,7 +2616,7 @@ GAME_HTML = """<!DOCTYPE html>
                speed: FIRE_PX_PER_SEC / pathLength(lv.path),
                lives: lv.building.lives, budget: lv.budget||0,
                elapsed:0, spawned:0, fires:[], nextId:0,
-               towers:[], nextTowerId:0, status:'idle', flashUntil:0,
+               towers:[], nextTowerId:0, status:'idle', flashUntil:0, fledAt:0,
                ext:0, danger:0, useless:0, leaked:0, supplies:sup };
     }
     function onStartButton(){
@@ -2438,9 +2642,24 @@ GAME_HTML = """<!DOCTYPE html>
       var cost=(toolMap[toolId]||{}).cost||0;
       if (cost<=0 || game.budget<cost) return false;        // can't afford
       game.budget-=cost;
-      game.towers.push({id:game.nextTowerId++, spot_index:spotIndex, spot:spots[spotIndex], tool:toolId, cooldown:0});
+      var charge=towerChargeFor(level);
+      game.towers.push({id:game.nextTowerId++, spot_index:spotIndex, spot:spots[spotIndex], tool:toolId,
+                         cooldown:0, charge:charge, maxCharge:charge});   // ITEM-040
       updateBudget();
       return true;
+    }
+    // ITEM-042: switch off / remove a (possibly wrongly-placed) extinguisher, freeing
+    // its spot. NO REFUND — spent money is gone, on purpose, so removal can never be
+    // used to cheese a win by recycling budget. A distinct path from placeTower (see
+    // boardPlaceAt / the keyboard handler) so the one-tap-one-tower placement
+    // guarantee is never touched.
+    function removeTower(spotIndex){
+      if (!game) return false;
+      var before=game.towers.length;
+      game.towers = game.towers.filter(function(tw){ return tw.spot_index!==spotIndex; });
+      var removed = game.towers.length < before;
+      if (removed){ showFeedback('Löscher abgebaut — kein Rückerstattung.', 'ok'); updateBudget(); }
+      return removed;
     }
 
     // Cut a supply (ITEM-016): puts out the fires it fed and stops them being a threat.
@@ -2496,6 +2715,17 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.fillStyle='#101418'; ctx.font='700 9px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText((t.short||'').slice(0,6), x, y+h*0.27);
       ctx.textBaseline='alphabetic';
+      // ITEM-040: a shrinking charge gauge under the tower. The FILL LENGTH is the
+      // cue (greyscale/hc safe, not colour alone); it turns a second, distinct shade
+      // once low so it also reads without colour vision.
+      var maxC = tw.maxCharge || tw.charge || 1;
+      var frac = Math.max(0, Math.min(1, tw.charge / maxC));
+      var gw=w+6, gh=5, gx=x-gw/2, gy=y+h*0.42;
+      ctx.strokeStyle = contrastEnabled ? '#e5e7eb' : '#1f2937'; ctx.lineWidth=1;
+      ctx.strokeRect(gx, gy, gw, gh);
+      var low = frac <= 0.34;
+      ctx.fillStyle = low ? (contrastEnabled?'#fca5a5':'#b91c1c') : (contrastEnabled?'#bbf7d0':'#15803d');
+      ctx.fillRect(gx+1, gy+1, Math.max(0,(gw-2)*frac), gh-2);
     }
     function drawSprays(){
       var now=performance.now(), keep=[];
@@ -2651,15 +2881,39 @@ GAME_HTML = """<!DOCTYPE html>
       var tot = campaignTotal() || 4;
       return campaignProgress >= tot;
     }
+    // ITEM-033: how worried Anton looks THIS level, driven by remaining lives (0 =
+    // calm .. 1 = about to lose). Deliberately SEPARATE from antonBraveryFactor
+    // (which tracks campaign/win progress across missions, not this level's
+    // danger) — his win-side brave arc/helmet/finale are completely unaffected.
+    function antonWorryFactor(){
+      if (!game || !game.level || !game.level.building) return 0;
+      var start = game.level.building.lives || 1;
+      return 1 - Math.max(0, Math.min(1, game.lives / start));
+    }
     function drawAnton(){
       var now=performance.now();
       var f=antonBraveryFactor();
+      var worry=antonWorryFactor();
       // braver = rises up, stands more upright, more solid, a touch brighter.
       var x=canvas.width-44;
       var y=(54 - 14*f) + Math.sin(now/500)*(6 - 2*f);
       var alpha=0.5 + 0.45*f;
       var tilt=(1-f)*0.18 + Math.sin(now/900)*0.02;
-      drawGhost(ctx, x, y, 1, alpha, tilt, antonWearsHelmet(), f>0.6);
+      // ITEM-033: once the building has fallen (lives===0), Anton flees off-screen —
+      // presentation only, the lose condition (lives<=0 in advance()) is unchanged.
+      if (game && game.lives<=0 && game.fledAt){
+        var since=(now-game.fledAt)/1000;
+        y -= since*70; x += since*40;
+        alpha = Math.max(0, alpha - since*0.5);
+        tilt = -0.6 - since*0.3;
+        if (alpha<=0) return;                 // fully flown off — nothing left to draw
+        drawGhost(ctx, x, y, 1, alpha, tilt, antonWearsHelmet(), false);
+        return;
+      }
+      // Worried: a lower, twitchier stance and a touch fainter the fewer lives
+      // remain — additive with (not a replacement for) the bravery stance above.
+      y += worry*10; tilt += worry*0.14 * Math.sin(now/220); alpha -= worry*0.15;
+      drawGhost(ctx, x, y, 1, Math.max(0.15,alpha), tilt, antonWearsHelmet(), f>0.6);
     }
     // Anton "senses" the trouble and marks the spot where fire will break out
     // (ITEM-026): a gentle pulsing ring at the start of the path with a small note,
@@ -2866,6 +3120,16 @@ GAME_HTML = """<!DOCTYPE html>
       var i=nearestSpot(clientX, clientY);
       if (i>=0){ keyIndex=i; placeTower(i, selectedTool); }
     }
+    // ITEM-042: tapping/clicking an already-occupied spot while NO tool is selected
+    // removes the tower there. A distinct path from placement — boardPlaceAt (and
+    // placeTower) above are untouched, so whenever a tool IS selected a tap can only
+    // ever place, never remove; the one-tap-one-tower placement guarantee holds.
+    function boardTapAt(clientX, clientY){
+      if (!game || !level) return;
+      if (selectedTool){ boardPlaceAt(clientX, clientY); return; }
+      var i=nearestSpot(clientX, clientY);
+      if (i>=0 && towerAt(i)){ keyIndex=i; removeTower(i); }
+    }
     // ONE input path so a single tap can never place twice (touch + synthetic-click
     // double-fire is avoided): use Pointer Events where supported (covers mouse, touch
     // and pen); otherwise fall back to click + touchend, with touchend suppressing the
@@ -2873,14 +3137,14 @@ GAME_HTML = """<!DOCTYPE html>
     if (window.PointerEvent){
       canvas.addEventListener('pointerup', function(e){
         if (e.pointerType==='mouse' && e.button!==0) return;   // left mouse only
-        boardPlaceAt(e.clientX, e.clientY);
+        boardTapAt(e.clientX, e.clientY);
       });
     } else {
-      canvas.addEventListener('click', function(e){ boardPlaceAt(e.clientX, e.clientY); });
+      canvas.addEventListener('click', function(e){ boardTapAt(e.clientX, e.clientY); });
       canvas.addEventListener('touchend', function(e){
         if (e.changedTouches && e.changedTouches.length){
           e.preventDefault();                                  // stop the following synthetic click
-          var t=e.changedTouches[0]; boardPlaceAt(t.clientX, t.clientY);
+          var t=e.changedTouches[0]; boardTapAt(t.clientX, t.clientY);
         }
       }, {passive:false});
     }
@@ -3033,6 +3297,14 @@ GAME_HTML = """<!DOCTYPE html>
         if (isButtonFocus()) return;               // let a focused button activate normally
         keyboardActive=true;
         if (game && selectedTool && keyIndex>=0) placeTower(keyIndex, selectedTool);
+        e.preventDefault(); return;
+      }
+      // ITEM-042/ITEM-020: Delete/Backspace removes the tower at the keyboard-
+      // highlighted build spot — the keyboard-parity path for the same removal
+      // boardTapAt offers by touch/click.
+      if (k==='Delete'||k==='Backspace'){
+        if (isButtonFocus()) return;
+        if (game && keyIndex>=0) removeTower(keyIndex);
         e.preventDefault(); return;
       }
       if (k===' '||k==='Spacebar'){

@@ -376,14 +376,26 @@ def test_wrong_tool_cannot_win():
 
 # --- ITEM-010: the teaching mechanic (right / useless / dangerous) -----------
 
-def _shot(tool, cls):
-    """Fire one tower shot of `tool` at a fire of class `cls` sitting on the tower,
-    and report (extinguished?, budget earned, game state)."""
+def _shot(tool, cls, max_shots=1):
+    """Fire up to `max_shots` tower shots of `tool` at a fire of class `cls` sitting
+    on the tower (its position is pinned back between shots so only hit-resolution
+    is under test, never dwell/range), stopping as soon as it's extinguished.
+    Reports (game state, extinguished?, total budget earned).
+
+    ITEM-041: a "good" tool still clears a fire in one shot (max_shots=1 is enough,
+    matching every existing single-shot caller); a "weak" tool needs a caller to
+    pass a bigger max_shots to see it fully wear the fire down."""
     gs = g.GameState(_mini_level(budget=1000))
     gs.place_tower(0, tool)                       # tower at (100,0)
-    gs.fires = [{"id": 1, "class": cls, "progress": 0.25}]   # (100,0), in range
+    gs.fires = [{"id": 1, "class": cls, "progress": 0.25, "hp": g.FIRE_HP}]  # (100,0), in range
     b0 = gs.budget
-    gs.advance(0.02)                             # tower fires; movement negligible
+    for _ in range(max_shots):
+        gs.advance(g.TOWER_COOLDOWN + 0.01)       # guarantees exactly one shot per call
+        if all(f["id"] != 1 for f in gs.fires):
+            break
+        for f in gs.fires:
+            if f["id"] == 1:
+                f["progress"] = 0.25              # hold position between shots
     extinguished = all(f["id"] != 1 for f in gs.fires)
     return gs, extinguished, gs.budget - b0
 
@@ -391,18 +403,20 @@ def _shot(tool, cls):
 def test_resolution_matches_the_matrix_for_every_pair():
     for cls, row in g.MATRIX.items():
         for tool, expected in row.items():
-            gs, extinguished, earned = _shot(tool, cls)
+            # ITEM-041: a "weak" (acceptable) tool may need a second hit to fully
+            # wear a fire down — a "good" (ideal) one still does it in the first.
+            gs, extinguished, earned = _shot(tool, cls, max_shots=4)
             if expected in ("good", "weak"):
                 assert extinguished, f"{tool} on {cls} ({expected}) should put it out"
                 assert earned == g.EXTINGUISH_REWARD + (g.SMART_BONUS if expected == "good" else 0)
             elif expected == "danger":
                 assert not extinguished, f"{tool} on {cls} is dangerous — must NOT put it out"
                 assert earned == 0
-                assert gs.stats["danger_hits"] == 1
+                assert gs.stats["danger_hits"] >= 1
             else:  # useless
                 assert not extinguished, f"{tool} on {cls} is useless — must NOT put it out"
                 assert earned == 0
-                assert gs.stats["useless_hits"] == 1
+                assert gs.stats["useless_hits"] >= 1
 
 
 def test_headline_lessons():
@@ -541,17 +555,12 @@ def test_recap_counts_leaks_mistakes_and_zero_knowledge():
 # buys the given towers as soon as the budget allows, then plays to the end.
 
 def _play_level0(placements):
-    """Run level 0 with an incremental player. placements: (spot_index, tool_id).
-    Returns the recap dict."""
-    gs = g.GameState(g.LEVELS[0])
-    queue = list(placements)
-    t = 0.0
-    while gs.status == "playing" and t < 120:
-        while queue and gs.place_tower(queue[0][0], queue[0][1])[0]:
-            queue.pop(0)
-        gs.advance(1 / 30.0)
-        t += 1 / 30.0
-    return gs.recap()
+    """Run level 0 with a player who keeps the given (spot_index, tool_id) spots
+    filled — buying, and (ITEM-040) re-buying once a tower runs out of charge —
+    for as long as the budget allows. Returns the recap dict. Thin wrapper over the
+    production `_play_out` helper so this test and the `--simulate` behaviour guard
+    can never quietly drift apart."""
+    return g._play_out(g.LEVELS[0], placements)
 
 
 def test_level0_correct_play_wins_cleanly():
@@ -700,16 +709,9 @@ def test_no_single_tool_spam_wins_any_level():
 
 
 def test_second_level_won_by_a_correct_mix():
-    lv = g.LEVELS[1]
-    st = g.GameState(lv); st.status = "playing"
-    queue = [(0, "powder"), (2, "wetchem")]
-    t = 0.0
-    while st.status == "playing" and t < 180:
-        while queue and st.place_tower(queue[0][0], queue[0][1])[0]:
-            queue.pop(0)
-        st.advance(1 / 30.0)
-        t += 1 / 30.0
-    r = st.recap()
+    # ITEM-040: uses _play_out (not a one-shot buy) so a tower that runs out of
+    # charge partway through gets noticed and re-bought, same as a real safe player.
+    r = g._play_out(g.LEVELS[1], [(0, "powder"), (2, "wetchem")])
     assert r["status"] == "won" and r["leaked"] == 0
 
 
@@ -909,7 +911,7 @@ def test_fire_characters_keep_greyscale_safe_signalling():
     fire = html[html.index("function drawFire(f){"):html.index("function drawOverlay")]
     assert "cls.letter" in fire                     # letter badge
     assert "cls.icon" in fire                       # emoji icon
-    assert "s+8" in fire and "setLineDash([4,4])" in fire   # danger + useless rings
+    assert "#b91c1c" in fire and "setLineDash([4,4])" in fire   # danger (solid red) + useless (dashed) rings
     assert "⚠" in fire                          # ⚠️ danger glyph
 
 
@@ -959,3 +961,251 @@ def test_path_bg_palette_changes_touch_no_fire_fact_or_balance():
     assert ok, problems
     ok2, problems2 = g.behaviour_check()
     assert ok2, "; ".join(problems2)
+
+
+# --- ITEM-041: fires resist being put out (different put-out times per tool) ---
+
+def test_good_tool_still_clears_a_fire_in_a_single_hit():
+    # The ideal tool must stay instant — earlier place/dwell-time tuning (e.g. the
+    # feuerwerk stage's metal-powder tower) depends on a "good" hit clearing a fire
+    # in one shot, exactly as before this item.
+    gs, extinguished, earned = _shot("water", "A")   # water is "good" on Class A
+    assert extinguished
+    assert earned == g.EXTINGUISH_REWARD + g.SMART_BONUS
+
+
+def test_weak_tool_needs_more_than_one_hit_and_still_wins_the_fire():
+    # co2 on Class A is "weak" (acceptable, not ideal): it must NOT clear the fire
+    # on the first hit, but must still finish it off (and earn only the base
+    # reward — no smart-play bonus) within a few hits.
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "co2")
+    gs.fires = [{"id": 1, "class": "A", "progress": 0.25, "hp": g.FIRE_HP}]
+    b0 = gs.budget
+    gs.advance(0.02)                       # first shot lands ...
+    assert any(f["id"] == 1 for f in gs.fires), "a weak tool should NOT clear a fire in one hit"
+    assert gs.fires[0]["hp"] < g.FIRE_HP, "the fire should visibly be worn down after one weak hit"
+    gs.fires[0]["progress"] = 0.25          # hold position for the second shot
+    gs.advance(g.TOWER_COOLDOWN + 0.01)     # ... second shot finishes it
+    assert all(f["id"] != 1 for f in gs.fires)
+    assert gs.budget - b0 == g.EXTINGUISH_REWARD, "a weak tool earns no smart-play bonus"
+
+
+def test_useless_and_dangerous_tools_never_reduce_hp_no_matter_how_long():
+    # Hard invariant: wrong/dangerous tools must never extinguish a fire, at any
+    # duration. Confirm this holds for hp specifically (ITEM-041's new field), not
+    # just for the fire being removed.
+    for tool, cls in (("metal", "A"), ("water", "electrical")):
+        gs = g.GameState(_mini_level(budget=1000))
+        gs.place_tower(0, tool)
+        gs.fires = [{"id": 1, "class": cls, "progress": 0.25, "hp": g.FIRE_HP}]
+        for _ in range(20):
+            gs.advance(g.TOWER_COOLDOWN + 0.01)
+            for f in gs.fires:
+                if f["id"] == 1:
+                    f["progress"] = 0.25
+        assert any(f["id"] == 1 for f in gs.fires), f"{tool} on {cls} must never extinguish the fire"
+        remaining = next(f for f in gs.fires if f["id"] == 1)
+        assert remaining["hp"] == g.FIRE_HP, f"{tool} on {cls} must never wear the fire's hp down"
+
+
+def test_fire_resistance_is_drawn_shrinking_toward_the_kill():
+    html = g.render_game_html()
+    assert "FIRE_HP" in html and "GOOD_HIT_DAMAGE" in html and "WEAK_HIT_DAMAGE" in html
+    assert "flameScale" in html   # the flame character shrinks with remaining hp (base-anchored, merged with ITEM-051)
+
+
+# --- ITEM-040: extinguishers deplete and empty out ---------------------------
+
+def test_freshly_placed_tower_has_charge_and_it_is_spent_on_effective_shots():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    tw = gs.towers[0]
+    assert tw["charge"] == tw["max_charge"] > 0
+    gs.fires = [{"id": 1, "class": "A", "progress": 0.25, "hp": g.FIRE_HP}]  # water is good on A
+    gs.advance(0.02)
+    assert gs.towers[0]["charge"] == tw["max_charge"] - 1
+
+
+def test_tower_is_removed_once_charge_runs_out_freeing_the_spot():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    charge = gs.towers[0]["charge"]
+    # Keep a fresh Class A fire (water is good) sitting on the tower and let it
+    # fire repeatedly until the canister is empty. (_mini_level's default empty
+    # waves means the level would otherwise flip to "won" the instant no fire is
+    # left — force it back to "playing" each round so the test purely exercises
+    # charge depletion.)
+    for i in range(charge):
+        gs.status = "playing"
+        gs.fires = [{"id": 100 + i, "class": "A", "progress": 0.25, "hp": g.FIRE_HP}]
+        gs.advance(g.TOWER_COOLDOWN + 0.01)
+    assert gs.towers == [], "a tower should be removed once its charge reaches zero"
+    # The spot is free again — a new tower can be bought there.
+    ok, why = gs.place_tower(0, "foam")
+    assert ok, why
+
+
+def test_useless_shot_does_not_spend_charge():
+    # A shot that plainly can't touch this class of fire (e.g. metal powder is
+    # useless on Class C gases) shouldn't bankrupt a tower that's simply standing
+    # near an unrelated fire — only a shot that actually discharges AT the fire
+    # (good/weak/dangerous) spends charge.
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "metal")
+    charge0 = gs.towers[0]["charge"]
+    gs.fires = [{"id": 1, "class": "C", "progress": 0.25, "hp": g.FIRE_HP}]  # metal is useless on C
+    for _ in range(5):
+        gs.advance(g.TOWER_COOLDOWN + 0.01)
+        gs.fires = [{"id": 1, "class": "C", "progress": 0.25, "hp": g.FIRE_HP}]
+    assert gs.stats["useless_hits"] >= 1
+    assert gs.towers[0]["charge"] == charge0, "a wholly useless shot must not spend charge"
+
+
+def test_dangerous_shot_spends_charge_same_as_a_correct_one():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    charge0 = gs.towers[0]["charge"]
+    gs.fires = [{"id": 1, "class": "electrical", "progress": 0.25, "hp": g.FIRE_HP}]  # water is dangerous
+    gs.advance(0.02)
+    assert gs.towers[0]["charge"] == charge0 - 1, "a dangerous shot still discharges the extinguisher"
+
+
+def test_charge_tightens_across_the_four_campaign_missions():
+    charges = [g.tower_charge_for(m) for m in ({"mission": 1}, {"mission": 2}, {"mission": 3}, {"mission": 4})]
+    assert charges[0] > charges[1] > charges[2] > charges[3], charges
+    assert charges[0] == g.TOWER_CHARGE_BASE
+    assert all(c >= g.MIN_TOWER_CHARGE for c in charges)
+
+
+def test_non_campaign_levels_use_the_generous_baseline_charge():
+    non_campaign = next(lv for lv in g.LEVELS if not lv.get("campaign"))
+    assert g.tower_charge_for(non_campaign) == g.TOWER_CHARGE_BASE == g.tower_charge_for({"mission": 1})
+
+
+def test_charge_gauge_is_drawn_on_the_tower():
+    html = g.render_game_html()
+    assert "towerChargeFor" in html and "maxCharge" in html
+
+
+# --- ITEM-034: water on liquid(B)/cooking-oil(F) fires splits them ------------
+
+def test_water_on_a_liquid_fire_can_split_it_in_two():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    gs.fires = [{"id": 1, "class": "B", "progress": 0.25, "hp": g.FIRE_HP}]  # water is dangerous on B
+    before = len(gs.fires)
+    gs.advance(0.02)
+    assert len(gs.fires) == before + 1, "a dangerous water hit on a liquid fire should split it"
+    assert all(f["class"] == "B" for f in gs.fires)
+    assert gs.stats["danger_hits"] == 1
+
+
+def test_water_on_a_cooking_oil_fire_can_split_it_too():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    gs.fires = [{"id": 1, "class": "F", "progress": 0.25, "hp": g.FIRE_HP}]  # water is dangerous on F
+    gs.advance(0.02)
+    assert len(gs.fires) == 2
+    assert all(f["class"] == "F" for f in gs.fires)
+
+
+def test_splitting_never_exceeds_the_max_active_fires_cap():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    gs.fires = [
+        {"id": i, "class": "B", "progress": 0.25, "hp": g.FIRE_HP}
+        for i in range(g.MAX_ACTIVE_FIRES)
+    ]
+    gs.advance(0.02)
+    assert len(gs.fires) <= g.MAX_ACTIVE_FIRES, "splitting must never push past the fire cap"
+
+
+def test_split_fires_are_still_only_cleared_by_the_correct_tool():
+    # A split fire is a fresh, ordinary fire of the same class — the matrix still
+    # applies to it exactly the same (wrong tools never clear it).
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    gs.fires = [{"id": 1, "class": "B", "progress": 0.25, "hp": g.FIRE_HP}]
+    gs.advance(0.02)
+    assert len(gs.fires) == 2
+    for f in gs.fires:
+        f["progress"] = 0.25
+    gs.advance(0.02)   # water again: still dangerous, never extinguishes either copy
+    assert len(gs.fires) >= 2
+
+
+# --- ITEM-042: switch off / remove a wrongly-placed extinguisher -------------
+
+def test_remove_tower_frees_the_spot_with_no_refund():
+    gs = g.GameState(_mini_level(budget=1000))
+    gs.place_tower(0, "water")
+    budget_after_buy = gs.budget
+    assert len(gs.towers) == 1
+    removed = gs.remove_tower(0)
+    assert removed is True
+    assert gs.towers == []
+    assert gs.budget == budget_after_buy, "removing a tower must NOT refund its cost"
+    # The spot is free again.
+    ok, why = gs.place_tower(0, "foam")
+    assert ok, why
+
+
+def test_remove_tower_on_an_empty_spot_is_a_no_op():
+    gs = g.GameState(_mini_level(budget=1000))
+    assert gs.remove_tower(0) is False
+    assert gs.towers == []
+
+
+def test_removal_cannot_be_used_to_cheese_a_win():
+    # Buying, removing, and re-buying a tool over and over must never manufacture
+    # budget out of nothing (no refund on removal).
+    gs = g.GameState(_mini_level(budget=200))
+    b0 = gs.budget
+    for _ in range(3):
+        gs.place_tower(0, "water")
+        gs.remove_tower(0)
+    assert gs.budget == b0 - 3 * g.tool_cost("water")
+
+
+def test_remove_tower_reachable_by_touch_and_keyboard_in_js():
+    html = g.render_game_html()
+    assert "function removeTower(spotIndex)" in html
+    # touch/click path: tapping an occupied spot with no tool selected removes it,
+    # kept distinct from placeTower's own logic (ITEM-042 requirement).
+    assert "function boardTapAt(" in html
+    assert "towerAt(i)){ keyIndex=i; removeTower(i); }" in html
+    # keyboard parity (ITEM-020): Delete/Backspace removes the highlighted tower.
+    assert "k==='Delete'||k==='Backspace'" in html
+
+
+# --- ITEM-033: house damage stages + Anton flees (visual/narration only) ------
+
+def test_building_damage_stage_reflects_remaining_lives_in_js():
+    html = g.render_game_html()
+    assert "function buildingDamageStage()" in html
+    assert "function drawSmokeRuin(" in html and "function drawCracksAndLick(" in html
+
+
+def test_anton_worry_and_flee_are_present_and_separate_from_bravery_in_js():
+    html = g.render_game_html()
+    assert "function antonWorryFactor()" in html
+    assert "function antonBraveryFactor()" in html
+    # worry is driven by THIS level's lives, not by campaign/win progress
+    assert "game.lives / start" in html
+    # Anton flees once lives hit zero, and his win-side helmet/finale arc is
+    # unaffected: antonWearsHelmet() still depends only on campaignProgress.
+    assert "game.lives<=0 && game.fledAt" in html
+    assert "function antonWearsHelmet(){\n      var tot = campaignTotal() || 4;\n      return campaignProgress >= tot;" in html
+
+
+def test_visual_damage_mechanic_does_not_change_the_lose_condition():
+    # ITEM-033 is presentation only: lives<=0 is still exactly when a level is lost.
+    lv = _mini_level(budget=0, building={"x": 400, "y": 0, "lives": 1, "name_de": "X"},
+                     waves=[{"gap": 0.5, "fires": ["A"]}])
+    gs = g.GameState(lv)
+    for _ in range(200):
+        gs.advance(0.1)
+        if gs.status != "playing":
+            break
+    assert gs.status == "lost" and gs.lives == 0
