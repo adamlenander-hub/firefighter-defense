@@ -918,3 +918,44 @@ def test_fire_characters_changed_no_fire_fact_or_balance():
     assert ok, problems
     ok2, problems2 = g.behaviour_check()
     assert ok2, "; ".join(problems2)
+
+
+# --- ITEM-044 / 035 / 036: per-mission path + background + extinguisher palette --
+
+def test_per_mission_path_materials_present():
+    html = g.render_game_html()
+    for fn in ("drawPathTimber", "drawPathBooks", "drawPathGravel", "drawPathChips", "drawPathCables"):
+        assert "function " + fn + "(" in html, fn
+    # dispatched by the level key, and path motifs are cached (computed once, not per frame)
+    assert "key==='fachwerk'" in html and "key==='schlosserei'" in html
+    assert "_motifCache" in html
+
+
+def test_per_mission_backgrounds_present_and_dark_in_high_contrast():
+    html = g.render_game_html()
+    for fn in ("bgFachwerk", "bgBibliothek", "bgKurpark", "bgFeuerwerk", "bgSchlosserei"):
+        assert "function " + fn + "(" in html, fn
+    # per-level gradient cached (computed once), and a plain dark field in high-contrast
+    assert "_bgKey" in html and "function bgGradient(" in html
+    assert "if (contrastEnabled){ ctx.fillStyle='#0b0d12'" in html
+
+
+def test_palette_shows_extinguisher_graphic_and_info_popup():
+    html = g.render_game_html()
+    # tool cards with a canvas graphic + label + info affordance
+    assert "class=\"toolbtn\"" not in html  # built in JS, not static markup
+    assert "'toolbtn'" in html and "'toolcv'" in html and "'toolinfo'" in html
+    assert "function openToolInfo(" in html and 'id="toolInfo"' in html
+    # selecting a tool still selects it for placement (game action preserved)
+    assert "selectedTool=t.id" in html
+    # info text is derived from the guarded matrix (no invented facts)
+    assert "matrixMap[cid" in html
+    # still keyboard-selectable (1..N) via the existing slot handler
+    assert "function selectToolSlot(" in html
+
+
+def test_path_bg_palette_changes_touch_no_fire_fact_or_balance():
+    ok, problems = g.check_content()
+    assert ok, problems
+    ok2, problems2 = g.behaviour_check()
+    assert ok2, "; ".join(problems2)

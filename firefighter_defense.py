@@ -1425,7 +1425,14 @@ GAME_HTML = """<!DOCTYPE html>
     button:disabled { opacity: .5; cursor: default; }
     label { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; color: var(--muted); }
     label input { width: 20px; height: 20px; }
-    #toolPalette button { min-width: 64px; }
+    /* ITEM-036 extinguisher palette cards: graphic + label + info affordance */
+    .tool { display: inline-flex; flex-direction: column; align-items: stretch; gap: .2rem; }
+    .toolbtn { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .4rem .5rem; min-width: 70px; }
+    .toolbtn canvas { display: block; }
+    .toolbtn .tname { font-size: .74rem; font-weight: 700; }
+    .toolbtn .tcost { font-size: .68rem; color: var(--muted); }
+    .toolbtn.active .tcost { color: rgba(255,255,255,.9); }
+    .toolinfo { min-height: 34px; padding: .15rem .5rem; font-size: .74rem; border-radius: 10px; box-shadow: 0 1px 0 var(--line); }
     .wrap { width: 100%; max-width: 960px; }
     canvas {
       width: 100%; height: auto; border-radius: 22px; box-shadow: 0 10px 30px rgba(31,41,55,.12);
@@ -1528,6 +1535,16 @@ GAME_HTML = """<!DOCTYPE html>
       <p style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;">Welcher Löscher passt zu welchem Feuer?</p>
       <div id="libBody" style="font-size:.9rem;"></div>
       <div style="text-align:center; margin-top:1rem;"><button id="libClose">Schließen</button></div>
+    </div>
+  </div>
+
+  <!-- Tool info pop-up (ITEM-036) — the extinguisher graphic + its guarded facts -->
+  <div id="toolInfo" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); align-items:center; justify-content:center; z-index:12;">
+    <div style="background:var(--panel); color:var(--ink); max-width:24rem; margin:1rem; padding:1.2rem 1.4rem; border-radius:20px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <canvas id="tiCanvas" width="62" height="80" style="display:block; margin:0 auto .2rem;"></canvas>
+      <h3 id="tiTitle" style="margin:.2rem 0;"></h3>
+      <div id="tiBody" style="font-size:.92rem; text-align:left;"></div>
+      <div style="text-align:center; margin-top:1rem;"><button id="tiClose">Schließen</button></div>
     </div>
   </div>
 
@@ -1798,29 +1815,100 @@ GAME_HTML = """<!DOCTYPE html>
     function flameShape(c,s,sc){ c.beginPath(); c.moveTo(0,-s*sc);
       c.bezierCurveTo(s*0.9*sc,-s*0.5*sc, s*0.75*sc,s*0.7*sc, 0,s*sc);
       c.bezierCurveTo(-s*0.75*sc,s*0.7*sc, -s*0.9*sc,-s*0.5*sc, 0,-s*sc); c.closePath(); }
-    // Two-tone flat extinguisher body in the tool colour.
-    function drawExtShape(x,y,w,h,col){
-      ctx.save();
-      ctx.fillStyle=col; rr(ctx,x,y,w,h,w*0.36); ctx.fill();
-      ctx.save(); rr(ctx,x,y,w,h,w*0.36); ctx.clip();
-      ctx.fillStyle=shade(col,-0.22); ctx.fillRect(x+w*0.55,y,w*0.5,h);
-      ctx.fillStyle=shade(col,0.35); ctx.fillRect(x,y,w*0.16,h);
-      ctx.restore();
-      ctx.fillStyle=cssv('--ink')||'#1f2937'; rr(ctx,x+w*0.32,y-h*0.14,w*0.36,h*0.14,3); ctx.fill();
-      rr(ctx,x+w*0.12,y-h*0.05,w*0.76,h*0.09,3); ctx.fill();
-      ctx.fillStyle='#ffffff'; rr(ctx,x+w*0.2,y+h*0.30,w*0.6,h*0.3,4); ctx.fill();
-      ctx.restore();
+    // Two-tone flat extinguisher body in the tool colour. Takes a context so it can
+    // be drawn on the board (towers) AND on the little palette canvases (ITEM-036).
+    function drawExtShape(c,x,y,w,h,col){
+      c.save();
+      c.fillStyle=col; rr(c,x,y,w,h,w*0.36); c.fill();
+      c.save(); rr(c,x,y,w,h,w*0.36); c.clip();
+      c.fillStyle=shade(col,-0.22); c.fillRect(x+w*0.55,y,w*0.5,h);
+      c.fillStyle=shade(col,0.35); c.fillRect(x,y,w*0.16,h);
+      c.restore();
+      c.fillStyle=cssv('--ink')||'#1f2937'; rr(c,x+w*0.32,y-h*0.14,w*0.36,h*0.14,3); c.fill();
+      rr(c,x+w*0.12,y-h*0.05,w*0.76,h*0.09,3); c.fill();
+      c.fillStyle='#ffffff'; rr(c,x+w*0.2,y+h*0.30,w*0.6,h*0.3,4); c.fill();
+      c.restore();
     }
+    // Tool colour, lightened in high-contrast so a dark tool still reads on a dark field.
+    function toolColour(hex){ return contrastEnabled ? shade(hex||'#334155',0.4) : (hex||'#334155'); }
 
     function trace(wp) { ctx.beginPath(); ctx.moveTo(wp[0][0], wp[0][1]); for (var i=1;i<wp.length;i++) ctx.lineTo(wp[i][0],wp[i][1]); }
-    function drawPath(wp) {
-      // Two-tone rounded ribbon: base road + a lighter top edge + a dashed centre.
-      var road = contrastEnabled ? '#2b3546' : '#c3cfdd';
+    // The shared two-tone rounded ribbon — the clear walking lane under every material.
+    function drawRibbon(wp, road){
       ctx.lineCap='round'; ctx.lineJoin='round';
       ctx.strokeStyle=road; ctx.lineWidth=44; trace(wp); ctx.stroke();
       ctx.strokeStyle=shade(road,0.22); ctx.lineWidth=44; ctx.save(); ctx.translate(0,-7); trace(wp); ctx.stroke(); ctx.restore();
       ctx.strokeStyle=road; ctx.lineWidth=30; trace(wp); ctx.stroke();
-      ctx.strokeStyle=shade(road, contrastEnabled?0.4:-0.08); ctx.lineWidth=3; ctx.setLineDash([12,14]); trace(wp); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // Unit tangent along the path at fraction t (for placing material motifs).
+    function pathTangentAt(wp, t){
+      var d=0.004, a=pathPointAt(wp, Math.max(0,t-d)), b=pathPointAt(wp, Math.min(1,t+d));
+      var dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy)||1; return [dx/L, dy/L];
+    }
+    // Evenly-spaced points along the path with a perpendicular (across-lane) vector.
+    // Cached per level+spacing so it is computed ONCE, not per frame (performance).
+    var _motifCache={};
+    function pathMotifs(wp, spacing){
+      var key=(level&&level.key||'')+'|'+spacing+'|'+wp.length;
+      if (_motifCache[key]) return _motifCache[key];
+      var total=pathLength(wp), n=Math.max(2, Math.floor(total/spacing)), arr=[];
+      for (var i=0;i<=n;i++){ var t=i/n, p=pathPointAt(wp,t), tg=pathTangentAt(wp,t);
+        arr.push({x:p[0], y:p[1], nx:-tg[1], ny:tg[0]}); }
+      _motifCache[key]=arr; return arr;
+    }
+    // --- ITEM-044: per-mission path material (picked by the level's key) ---------
+    // Each keeps the clear ribbon lane; the material is a themed overlay on top, and
+    // every material function is high-contrast aware so the lane stays legible.
+    function drawPathTimber(wp){                 // mission 1 — timber planks / boardwalk
+      var hc=contrastEnabled; drawRibbon(wp, hc?'#4a3826':'#b98a5a');
+      var plank=hc?'#6b5236':'#8a6238', edge=hc?'#241a10':shade(plank,-0.28);
+      ctx.lineCap='butt';
+      pathMotifs(wp,26).forEach(function(m){ var hw=16;
+        ctx.strokeStyle=edge; ctx.lineWidth=7; ctx.beginPath(); ctx.moveTo(m.x-m.nx*hw,m.y-m.ny*hw); ctx.lineTo(m.x+m.nx*hw,m.y+m.ny*hw); ctx.stroke();
+        ctx.strokeStyle=plank; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(m.x-m.nx*hw,m.y-m.ny*hw); ctx.lineTo(m.x+m.nx*hw,m.y+m.ny*hw); ctx.stroke(); });
+      ctx.lineCap='round';
+    }
+    function drawPathBooks(wp){                  // mission 2 — a trail of books
+      var hc=contrastEnabled; drawRibbon(wp, hc?'#2b3546':'#d9c9a8');
+      var spines=hc?['#7cb0ff','#ffc247','#ff86d3','#4fe6cf']:['#2f6fed','#e4572e','#8b5cf6','#14b8a6'];
+      pathMotifs(wp,30).forEach(function(m,i){ ctx.save(); ctx.translate(m.x,m.y); ctx.rotate(Math.atan2(m.ny,m.nx));
+        var col=spines[i%spines.length];
+        ctx.fillStyle=shade(col,-0.25); rr(ctx,-14,-6,28,12,2); ctx.fill();
+        ctx.fillStyle=col; rr(ctx,-14,-6,28,7,2); ctx.fill();
+        ctx.fillStyle=hc?'#e5e7eb':'#fff'; ctx.fillRect(-12,-1,24,3); ctx.restore(); });
+    }
+    function drawPathGravel(wp){                 // mission 3 — park gravel / earth trail
+      var hc=contrastEnabled; drawRibbon(wp, hc?'#333e30':'#c9b48f');
+      var g1=hc?'#5a674f':'#a8926b', g2=hc?'#414c3c':'#8f7a58';
+      pathMotifs(wp,13).forEach(function(m,i){ var off=((i*37)%9-4);
+        ctx.fillStyle=(i%2)?g1:g2; ctx.beginPath(); ctx.arc(m.x+m.nx*off, m.y+m.ny*off, (i%3)+1.6, 0, Math.PI*2); ctx.fill(); });
+    }
+    function drawPathChips(wp){                  // mission 4 — festival wood chips
+      var hc=contrastEnabled; drawRibbon(wp, hc?'#3a2c1c':'#caa778');
+      var c1=hc?'#7a5a38':'#a97e4e', c2=hc?'#5b4326':'#8a6238';
+      pathMotifs(wp,15).forEach(function(m,i){ var off=((i*29)%11-5);
+        ctx.save(); ctx.translate(m.x+m.nx*off, m.y+m.ny*off); ctx.rotate(i*1.3);
+        ctx.fillStyle=(i%2)?c1:c2; rr(ctx,-4,-1.7,8,3.4,1.4); ctx.fill(); ctx.restore(); });
+    }
+    function drawPathCables(wp){                 // Schlosserei — cables + a gas line
+      var hc=contrastEnabled; drawRibbon(wp, hc?'#20262f':'#b8c2cf');
+      function line(off,col,wd){ ctx.strokeStyle=col; ctx.lineWidth=wd; ctx.lineCap='round';
+        ctx.beginPath(); pathMotifs(wp,8).forEach(function(m,i){ var px=m.x+m.nx*off, py=m.y+m.ny*off; i?ctx.lineTo(px,py):ctx.moveTo(px,py); }); ctx.stroke(); }
+      line(-8, hc?'#ff7a4d':'#e4572e', 3.5);     // red cable
+      line(0,  hc?'#ffc247':'#d6a409', 3.5);     // yellow gas line
+      line(8,  hc?'#7cb0ff':'#2f6fed', 3.5);     // blue cable
+    }
+    function drawPath(wp){
+      var key=level&&level.key;
+      if (key==='fachwerk')       drawPathTimber(wp);
+      else if (key==='bibliothek')drawPathBooks(wp);
+      else if (key==='kurpark')   drawPathGravel(wp);
+      else if (key==='feuerwerk') drawPathChips(wp);
+      else if (key==='schlosserei')drawPathCables(wp);
+      else {                                     // generic fallback ribbon + centre line
+        var road=contrastEnabled?'#2b3546':'#c3cfdd'; drawRibbon(wp, road);
+        ctx.strokeStyle=shade(road, contrastEnabled?0.4:-0.08); ctx.lineWidth=3; ctx.setLineDash([12,14]); trace(wp); ctx.stroke(); ctx.setLineDash([]);
+      }
     }
     function drawBuildSpot(x,y){ ctx.setLineDash([5,6]); ctx.strokeStyle = contrastEnabled ? '#3b4657' : '#bcd0ea'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,24,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); }
     // A clear focus ring on the keyboard-highlighted build spot (ITEM-020), so a
@@ -2391,7 +2479,7 @@ GAME_HTML = """<!DOCTYPE html>
     function updateBudget(){
       var b = game ? game.budget : (level ? (level.budget||0) : 0);
       document.getElementById('budget').textContent = '💰 ' + b;
-      Array.prototype.forEach.call(document.querySelectorAll('#toolPalette button'), function(btn){
+      Array.prototype.forEach.call(document.querySelectorAll('#toolPalette .toolbtn'), function(btn){
         var cost=parseInt(btn.getAttribute('data-cost'),10);
         btn.disabled = (b < cost);
         btn.classList.toggle('active', btn.getAttribute('data-tool')===selectedTool);
@@ -2404,7 +2492,7 @@ GAME_HTML = """<!DOCTYPE html>
       var x=tw.spot[0], y=tw.spot[1];
       ctx.beginPath(); ctx.arc(x,y,TOWER_RANGE,0,Math.PI*2); ctx.fillStyle='rgba(47,111,237,.05)'; ctx.fill();
       var w=26, h=36;
-      drawExtShape(x-w/2, y-h/2+3, w, h, t.hex||'#334155');
+      drawExtShape(ctx, x-w/2, y-h/2+3, w, h, toolColour(t.hex));
       ctx.fillStyle='#101418'; ctx.font='700 9px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText((t.short||'').slice(0,6), x, y+h*0.27);
       ctx.textBaseline='alphabetic';
@@ -2437,20 +2525,84 @@ GAME_HTML = """<!DOCTYPE html>
 
     // One shared, styled two-tone flat background (sky gradient + a couple of simple
     // flat props). Per-mission distinct locations are a later item (ITEM-035), not here.
+    // --- ITEM-035: per-mission location background --------------------------------
+    // One soft per-level sky/wash gradient (computed ONCE, cached per level+size) plus
+    // a few LOW-CONTRAST flat silhouette props that evoke the place. In high-contrast
+    // mode the background becomes a plain dark field so it never hurts readability.
+    var BG_STOPS = {
+      fachwerk:   ['#e8eef7','#f6efe2'],   // pale day sky over the old lane
+      bibliothek: ['#efe3c8','#e7d6b6'],   // warm amber library interior
+      kurpark:    ['#8ea0b4','#c6d2de'],   // grey storm sky
+      feuerwerk:  ['#241d47','#3a2f5e'],   // festival night
+      schlosserei:['#d7dde5','#c3ccd6']    // cool grey workshop
+    };
+    var _bgGrad=null, _bgKey='';
+    function bgGradient(w,h,key){
+      var k=(key||'')+'|'+w+'x'+h;
+      if (k!==_bgKey){
+        var g=ctx.createLinearGradient(0,0,0,h);
+        var st=BG_STOPS[key]||['#e6effb','#f6f9fd'];
+        g.addColorStop(0,st[0]); g.addColorStop(1,st[1]);
+        _bgGrad=g; _bgKey=k;
+      }
+      return _bgGrad;
+    }
+    function bgFachwerk(w,h){                     // a row of half-timbered houses, top
+      for (var i=0;i<4;i++){ var x=30+i*235, y=18, bw=150, bh=86;
+        ctx.fillStyle='#e6d7c0'; rr(ctx,x,y,bw,bh,4); ctx.fill();
+        ctx.fillStyle='#b06a4a'; ctx.beginPath(); ctx.moveTo(x-8,y); ctx.lineTo(x+bw/2,y-24); ctx.lineTo(x+bw+8,y); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='#8a6b4a'; ctx.lineWidth=3;
+        ctx.strokeRect(x+3,y+3,bw-6,bh-6);
+        ctx.beginPath(); ctx.moveTo(x+3,y+3); ctx.lineTo(x+bw-3,y+bh-3); ctx.moveTo(x+bw-3,y+3); ctx.lineTo(x+3,y+bh-3); ctx.stroke(); }
+    }
+    function bgBibliothek(w,h){                   // a bookshelf band + a stone arch, top
+      ctx.fillStyle='#9a7b58'; rr(ctx,20,14,w-40,84,6); ctx.fill();
+      var cols=['#b0563a','#3f6ea8','#6b8a4a','#9a6a3a','#7c5aa0'];
+      for (var b=0;b*20<w-56;b++){ ctx.fillStyle=cols[b%5]; ctx.fillRect(30+b*20,22,15,68); }
+      ctx.fillStyle='#7a6142'; ctx.fillRect(20,90,w-40,10);
+      ctx.strokeStyle='#b79b74'; ctx.lineWidth=6; ctx.beginPath(); ctx.arc(w/2,116,140,Math.PI,0); ctx.stroke();
+    }
+    function bgKurpark(w,h){                      // storm clouds + trees + faint rain
+      ctx.fillStyle='#8493a5';
+      for (var i=0;i<4;i++){ var cx=90+i*250; ctx.beginPath(); ctx.arc(cx,46,40,0,Math.PI*2); ctx.arc(cx+42,58,30,0,Math.PI*2); ctx.arc(cx-40,58,26,0,Math.PI*2); ctx.fill(); }
+      [w*0.14, w*0.86].forEach(function(tx){ var ty=150;
+        ctx.fillStyle='#8a6238'; rr(ctx,tx-6,ty,12,34,3); ctx.fill();
+        ctx.fillStyle='#6f9a5a'; ctx.beginPath(); ctx.arc(tx,ty-8,30,0,Math.PI*2); ctx.fill(); });
+      ctx.strokeStyle='rgba(150,175,200,.5)'; ctx.lineWidth=1.5;
+      for (var r=0;r<26;r++){ var rx=(r*47)%w, ry=(r*83)%(h*0.55); ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-6,ry+14); ctx.stroke(); }
+    }
+    function bgFeuerwerk(w,h){                    // night sky: stars, bunting, soft beams
+      ctx.fillStyle='rgba(255,255,255,.75)';
+      for (var s=0;s<28;s++){ ctx.fillRect((s*71)%w, (s*53)%(h*0.5), 2, 2); }
+      var cols=['#e4572e','#f59e0b','#2f6fed','#14b8a6','#d6409f'];
+      ctx.strokeStyle='#cfd6e0'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,26); ctx.lineTo(w,26); ctx.stroke();
+      for (var i=0;i*44<w;i++){ var bx=i*44+12; ctx.fillStyle=cols[i%5];
+        ctx.beginPath(); ctx.moveTo(bx-10,27); ctx.lineTo(bx+10,27); ctx.lineTo(bx,45); ctx.closePath(); ctx.fill(); }
+      ctx.fillStyle='rgba(255,240,180,.10)';
+      ctx.beginPath(); ctx.moveTo(w*0.3,0); ctx.lineTo(w*0.16,h); ctx.lineTo(w*0.42,h); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(w*0.7,0); ctx.lineTo(w*0.58,h); ctx.lineTo(w*0.85,h); ctx.closePath(); ctx.fill();
+    }
+    function bgSchlosserei(w,h){                  // workshop: a window, a tool rack, a bench
+      ctx.fillStyle='#c3ccd6'; rr(ctx,40,22,120,80,6); ctx.fill();
+      ctx.strokeStyle='#8a97a6'; ctx.lineWidth=4; ctx.strokeRect(40,22,120,80);
+      ctx.beginPath(); ctx.moveTo(100,22); ctx.lineTo(100,102); ctx.moveTo(40,62); ctx.lineTo(160,62); ctx.stroke();
+      ctx.strokeStyle='#7a8494'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(w-230,40); ctx.lineTo(w-40,40); ctx.stroke();
+      ctx.fillStyle='#8a97a6';
+      ctx.fillRect(w-206,42,6,32); ctx.fillRect(w-212,72,18,8);            // hammer
+      ctx.fillRect(w-150,42,4,38);                                          // driver
+      ctx.lineWidth=4; ctx.strokeStyle='#8a97a6'; ctx.beginPath(); ctx.arc(w-100,58,13,0,Math.PI*1.4); ctx.stroke();  // wrench loop
+      ctx.fillStyle='#9aa4b0'; ctx.fillRect(0,h-24,w,24);                   // workbench along the bottom
+    }
     function drawBackground(){
-      var w=canvas.width, h=canvas.height, hc=contrastEnabled;
-      ctx.fillStyle=skyGradient(w,h); ctx.fillRect(0,0,w,h);
-      // two-tone cloud, top-left corner
-      ctx.save(); ctx.globalAlpha=hc?0.55:0.95;
-      ctx.fillStyle=hc?'#1b2431':'#dfe9f5'; ctx.beginPath(); ctx.arc(96,66,34,0,Math.PI*2); ctx.arc(134,76,26,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle=hc?'#141c27':'#cddcee'; ctx.beginPath(); ctx.arc(118,86,30,0,Math.PI); ctx.fill();
-      ctx.restore();
-      // two-tone tree, top-right corner (kept clear of the play area)
-      ctx.save(); ctx.globalAlpha=hc?0.6:1;
-      var tx=w-70, ty=118;
-      ctx.fillStyle=hc?'#3a2a1c':'#b98a5a'; rr(ctx,tx-5,ty,10,26,3); ctx.fill();
-      ctx.fillStyle=hc?'#22331f':'#cfe6c8'; ctx.beginPath(); ctx.moveTo(tx-34,ty); ctx.lineTo(tx,ty-58); ctx.lineTo(tx+34,ty); ctx.closePath(); ctx.fill();
-      ctx.fillStyle=hc?'#2c4028':'#bcdcb2'; ctx.beginPath(); ctx.moveTo(tx-20,ty); ctx.lineTo(tx,ty-32); ctx.lineTo(tx+34,ty); ctx.closePath(); ctx.fill();
+      var w=canvas.width, h=canvas.height, key=level&&level.key;
+      if (contrastEnabled){ ctx.fillStyle='#0b0d12'; ctx.fillRect(0,0,w,h); return; }  // plain dark field
+      ctx.fillStyle=bgGradient(w,h,key); ctx.fillRect(0,0,w,h);
+      ctx.save(); ctx.globalAlpha=0.5;                                       // low-contrast, decorative
+      if (key==='fachwerk')       bgFachwerk(w,h);
+      else if (key==='bibliothek')bgBibliothek(w,h);
+      else if (key==='kurpark')   bgKurpark(w,h);
+      else if (key==='feuerwerk') bgFeuerwerk(w,h);
+      else if (key==='schlosserei')bgSchlosserei(w,h);
       ctx.restore();
     }
     // Draw Anton the ghost at (x,y) on any context. Shared by the board, the reward
@@ -2631,19 +2783,67 @@ GAME_HTML = """<!DOCTYPE html>
       }).catch(function(){ document.getElementById('place').textContent='Einsatz konnte nicht geladen werden.'; });
     }
 
+    // ITEM-036: each tool is a card with a two-tone flat extinguisher graphic + label
+    // (name/slot + cost) + an "ℹ Info" affordance. Clicking the card selects the tool
+    // for placement (the game action); ℹ opens the info pop-up. Tools stay tellable
+    // apart by label + shape (not colour), keyboard-selectable (1..N) and touch-sized.
     function loadTools(){
       return fetch('/api/tools').then(function(r){return r.json();}).then(function(list){
         toolsList=list; var bar=document.getElementById('toolPalette'); bar.innerHTML='';
-        list.forEach(function(t){
+        list.forEach(function(t, idx){
           toolMap[t.id]=t;
-          var btn=document.createElement('button');
-          btn.textContent=t.short+' ('+t.cost+')';
+          var wrap=document.createElement('div'); wrap.className='tool';
+          var btn=document.createElement('button'); btn.className='toolbtn';
           btn.setAttribute('data-tool', t.id); btn.setAttribute('data-cost', t.cost);
+          btn.setAttribute('aria-label', t.name_de + ' — ' + t.cost);
+          var cv=document.createElement('canvas'); cv.className='toolcv'; cv.width=34; cv.height=46; cv.setAttribute('data-tool', t.id);
+          var nm=document.createElement('span'); nm.className='tname'; nm.textContent=(idx+1)+'. '+t.short;
+          var cs=document.createElement('span'); cs.className='tcost'; cs.textContent='💰 '+t.cost;
+          btn.appendChild(cv); btn.appendChild(nm); btn.appendChild(cs);
           btn.onclick=function(){ selectedTool=t.id; updateBudget(); };
-          bar.appendChild(btn);
+          var info=document.createElement('button'); info.className='toolinfo'; info.textContent='ℹ Info';
+          info.setAttribute('aria-label', 'Info: ' + t.name_de);
+          info.onclick=function(){ openToolInfo(t.id); };
+          wrap.appendChild(btn); wrap.appendChild(info); bar.appendChild(wrap);
         });
+        paintToolCanvases();
       }).catch(function(){});
     }
+    // Draw the little extinguisher graphic on each palette card (also redrawn when the
+    // high-contrast theme changes, so the tool colour stays readable).
+    function paintToolCanvases(){
+      Array.prototype.forEach.call(document.querySelectorAll('#toolPalette canvas.toolcv'), function(cv){
+        var t=toolMap[cv.getAttribute('data-tool')]; if (!t) return;
+        var c=null; try { c=cv.getContext('2d'); } catch(e){ return; }
+        if (!c) return;
+        c.clearRect(0,0,cv.width,cv.height);
+        drawExtShape(c, 8, 12, 18, 26, toolColour(t.hex));
+      });
+    }
+    // Tool info pop-up (ITEM-036). Facts are DERIVED from the guarded fire-safety
+    // matrix (same source as "Antons Wissen") — nothing is invented here.
+    function openToolInfo(id){
+      var t=toolMap[id]; if (!t) return;
+      selectedTool=id; updateBudget();                 // selecting still selects for placement
+      document.getElementById('tiTitle').textContent = t.name_de + ' (' + t.short + ')';
+      var cv=document.getElementById('tiCanvas'), c=null;
+      try { c=cv.getContext('2d'); } catch(e){ c=null; }
+      if (c){ c.clearRect(0,0,cv.width,cv.height); drawExtShape(c, 18, 20, 26, 40, toolColour(t.hex)); }
+      var goods=[], weaks=[], dangers=[];
+      (window._classOrder||[]).forEach(function(cid){
+        var o=matrixMap[cid+'|'+id], cc=classMap[cid]||{};
+        var lab=(cc.icon||'')+' '+(cc.name_de||cid)+' ('+(cc.letter||'')+')';
+        if (o==='good') goods.push(lab); else if (o==='danger') dangers.push(lab); else if (o==='weak') weaks.push(lab);
+      });
+      var html='<p style="color:var(--muted); margin:.2rem 0;">Kosten zum Aufstellen: 💰 '+t.cost+'</p>';
+      html+='<div style="color:var(--c); margin:.2rem 0;">✓ Richtig gegen: '+(goods.join(', ')||'—')+'</div>';
+      if (weaks.length) html+='<div style="color:var(--muted); margin:.2rem 0;">≈ Notfalls brauchbar: '+weaks.join(', ')+'</div>';
+      if (dangers.length) html+='<div style="color:var(--red); margin:.2rem 0;">⚠️ Gefährlich auf: '+dangers.join(', ')+'</div>';
+      document.getElementById('tiBody').innerHTML=html;
+      if (game && game.status==='playing') paused=true;
+      document.getElementById('toolInfo').style.display='flex';
+    }
+    function closeToolInfo(){ document.getElementById('toolInfo').style.display='none'; paused=false; last=performance.now(); }
 
     // Tap/click a build spot to place the selected tool there. The screen point is
     // scaled to board coordinates (works when the board is shrunk on a tablet). The
@@ -2779,6 +2979,7 @@ GAME_HTML = """<!DOCTYPE html>
     };
     document.getElementById('vigClose').onclick = closeVignette;
     document.getElementById('finClose').onclick = closeFinale;
+    document.getElementById('tiClose').onclick = closeToolInfo;
 
     // --- Große Schrift / Hoher Kontrast (ITEM-020) — presentational only, persisted
     //     with the same guarded localStorage pattern (a storage failure never throws).
@@ -2786,6 +2987,7 @@ GAME_HTML = """<!DOCTYPE html>
       contrastEnabled=!!on;
       if (document.body){ if (on) document.body.classList.add('hc'); else document.body.classList.remove('hc'); }
       var cb=document.getElementById('contrastToggle'); if (cb) cb.checked=!!on;
+      paintToolCanvases();   // tool colours are lightened for the dark field — repaint
     }
     function saveContrast(on){ try { window.localStorage.setItem('fd_contrast', on?'1':'0'); } catch(e){} }
     function loadContrast(){ var on=false; try { on = window.localStorage.getItem('fd_contrast')==='1'; } catch(e){ on=false; } applyContrast(on); }
@@ -2809,7 +3011,7 @@ GAME_HTML = """<!DOCTYPE html>
     }
     function isButtonFocus(){ var el=document.activeElement; return !!(el && (el.tagName||'').toUpperCase()==='BUTTON'); }
     function anyOverlayOpen(){
-      var ids=['card','recap','lib','vignette','finale'];
+      var ids=['card','recap','lib','vignette','finale','toolInfo'];
       for (var i=0;i<ids.length;i++){ var el=document.getElementById(ids[i]);
         if (el && el.style.display && el.style.display!=='none') return true; }
       return false;
