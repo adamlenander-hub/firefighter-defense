@@ -254,6 +254,62 @@ ANTON = {
             "bonus": L("Rettungsbonus: Bühne und Festgäste sind unversehrt."),
         },
     },
+    # --- Anton's growth arc (ITEM-028) -------------------------------------------
+    # His courage as the campaign progresses, indexed by the number of story missions
+    # completed (0..4). Shown as a small mood line; his drawn ghost also stands taller,
+    # more solid and a touch brighter with each mission (in the browser).
+    "arc": {
+        "courage": [
+            L("Ich bin nur ein scheuer Burggeist … aber ich versuche, mutig zu sein. Bleib bei mir."),
+            L("Schon ein Einsatz geschafft — mein altes Geisterherz klopft ein bisschen mutiger."),
+            L("Zwei Einsätze! Weißt du, langsam traue ich mich sogar näher ans Feuer heran."),
+            L("Drei gemeistert — ich flüstere nicht mehr nur, ich rufe fast schon Kommandos!"),
+            L("Alle Einsätze gemeistert. Ich stehe aufrecht und stolz — fast wie ein echter Feuerwehrgeist."),
+        ],
+    },
+    # --- Between-mission reward vignettes (ITEM-028) -----------------------------
+    # DECISION (Adam): gentle, FICTIONAL, animated scenes — no real names, no dated
+    # real events. They evoke the brigade's 150-year spirit (courage, helping
+    # neighbours, the town through the years) without claiming specific real people.
+    # "scene" names a lightweight canvas animation drawn in the browser. Keyed by
+    # mission key. The library vignette carries the "finds his own name" beat.
+    "vignettes": {
+        "fachwerk": {
+            "title": L("Nachbarn in der Nacht"),
+            "scene": "lantern",
+            "caption": L("Vor langer Zeit, so erzählt man sich, reichten sich Nachbarn in einer engen Gasse eimerweise Wasser weiter, bis der letzte Funke erlosch. Kein Name ist geblieben — nur der Mut, füreinander dazustehen."),
+        },
+        "bibliothek": {
+            "title": L("Ein Name im Protokoll"),
+            "scene": "records",
+            "caption": L("Zwischen den vergilbten Zeilen entdeckt Anton eine Eintragung, die klingt wie sein eigener Name. „Da … das könnte ich sein.“ Zum ersten Mal seit 150 Jahren fühlt er sich wahrhaftig gesehen."),
+        },
+        "kurpark": {
+            "title": L("Nach dem Sturm"),
+            "scene": "storm",
+            "caption": L("Als das Unwetter sich legte, standen die Menschen im Kurpark noch lange beieinander — durchnässt, erleichtert, dankbar. So war es wohl schon immer: Gemeinschaft hält jedem Sturm stand."),
+        },
+        "feuerwerk": {
+            "title": L("150 Jahre Licht"),
+            "scene": "festival",
+            "caption": L("Über der Festbühne steigen Funken in den Nachthimmel. Anderthalb Jahrhunderte lang hat diese Stadt zusammengehalten — und Anton ist bei jedem Fest, jeder Sorge, jedem Jubel mitgeschwebt."),
+        },
+    },
+    # --- The finale (ITEM-028) ---------------------------------------------------
+    # Plays once, when ALL four missions are complete: the community gives Anton a
+    # little fire helmet (he wears it from now on) and the closing message lands in
+    # plain words — courage, compassion and community matter more than any equipment.
+    "finale": {
+        "title": L("Zum Feuerwehrgeist ernannt"),
+        "scene": "helmet",
+        "caption": L("Die ganze Gemeinschaft versammelt sich und setzt Anton eine kleine Feuerwehrmütze auf."),
+        "lines": [
+            L("Anton, du hast keinen Schlauch gehalten und keinen Tropfen Wasser berührt — und doch warst du bei jedem Einsatz dabei."),
+            L("Du hast gewittert, gewarnt, Mut gemacht und Menschen verbunden. Genau das macht einen Feuerwehrgeist aus."),
+            L("Mut, Mitgefühl und Zusammenhalt zählen mehr als jede Ausrüstung. Die Mütze ist nur das Zeichen für das, was du längst bist."),
+            L("Zum Einsatz, VOR! — von nun an für immer als Feuerwehrgeist von Königstein."),
+        ],
+    },
 }
 
 
@@ -276,6 +332,33 @@ def mission_lines_de(key: str) -> dict:
     if not m:
         return {}
     return {field: line.get("de", "") for field, line in m.items()}
+
+
+def vignette_de(key: str) -> dict:
+    """A mission's reward vignette (ITEM-028): {title, scene, caption} in German, or
+    {} if none. 'scene' is a lightweight canvas-animation id the browser draws."""
+    v = ANTON.get("vignettes", {}).get(key)
+    if not v:
+        return {}
+    return {"title": v["title"]["de"], "scene": v["scene"], "caption": v["caption"]["de"]}
+
+
+def anton_arc_de() -> list:
+    """Anton's courage lines by missions-completed (0..N), German (ITEM-028)."""
+    return [line["de"] for line in ANTON.get("arc", {}).get("courage", [])]
+
+
+def finale_de() -> dict:
+    """The campaign finale (ITEM-028): {title, scene, caption, lines[]} in German."""
+    f = ANTON.get("finale", {})
+    if not f:
+        return {}
+    return {
+        "title": f.get("title", {}).get("de", ""),
+        "scene": f.get("scene", ""),
+        "caption": f.get("caption", {}).get("de", ""),
+        "lines": [line["de"] for line in f.get("lines", [])],
+    }
 
 
 # Backward-compatible views onto the single ANTON store, so the rest of the code
@@ -995,6 +1078,8 @@ def level_json(index: int) -> dict | None:
         "campaign": bool(lv.get("campaign")),
         "mission": lv.get("mission"),
         "anton": mission_lines_de(lv.get("key", "")),
+        # The reward vignette that plays when this mission is won (ITEM-028).
+        "vignette": vignette_de(lv.get("key", "")),
     }
 
 
@@ -1333,6 +1418,7 @@ GAME_HTML = """<!DOCTYPE html>
     <h1>Firefighter Defense — Königstein</h1>
     <p style="margin:.1rem 0; font-size:.85rem; color:#b45309; font-weight:600;">🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre</p>
     <p class="place" id="place">Einsatz wird geladen …</p>
+    <p id="antonMood" style="margin:.1rem 0 0; font-size:.82rem; font-style:italic; color:#b45309;"></p>
   </header>
 
   <div class="bar" id="levelBar"></div>
@@ -1398,6 +1484,28 @@ GAME_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Reward vignette — a short animated scene after a mission win (ITEM-028) -->
+  <div id="vignette" style="display:none; position:fixed; inset:0; background:rgba(20,10,5,.72); align-items:center; justify-content:center; z-index:13;">
+    <div style="background:#1f1206; color:#fff7ed; max-width:32rem; margin:1rem; padding:1rem 1.2rem; border-radius:18px; box-shadow:0 20px 50px rgba(0,0,0,.5); text-align:center;">
+      <h3 id="vigTitle" style="margin:.2rem 0; color:#fdba74;"></h3>
+      <canvas id="vigCanvas" width="480" height="220" style="width:100%; height:auto; border-radius:12px; background:#0b0704; display:block; margin:.4rem 0;"></canvas>
+      <p id="vigCaption" style="line-height:1.5; font-size:.95rem;"></p>
+      <p style="font-size:.78rem; color:#c9a98f; margin:.4rem 0;">— Anton, der Burggeist 👻</p>
+      <button id="vigClose" class="active">Weiter</button>
+    </div>
+  </div>
+
+  <!-- One-time finale — the community gives Anton his helmet + closing message (ITEM-028) -->
+  <div id="finale" style="display:none; position:fixed; inset:0; background:rgba(10,6,20,.85); align-items:center; justify-content:center; z-index:14;">
+    <div style="background:#160f23; color:#f5f3ff; max-width:34rem; max-height:92vh; overflow:auto; margin:1rem; padding:1.1rem 1.3rem; border-radius:18px; box-shadow:0 20px 60px rgba(0,0,0,.6); text-align:center;">
+      <h2 id="finTitle" style="margin:.2rem 0; color:#fca5a5;"></h2>
+      <canvas id="finCanvas" width="480" height="240" style="width:100%; height:auto; border-radius:12px; background:#0a0614; display:block; margin:.4rem 0;"></canvas>
+      <p id="finCaption" style="font-style:italic; color:#ddd6fe; margin:.3rem 0;"></p>
+      <div id="finLines" style="line-height:1.6; font-size:.98rem; text-align:left; margin:.4rem 0;"></div>
+      <button id="finClose" class="active">Zum Fest 🎉</button>
+    </div>
+  </div>
+
   <script>
     // Dials — MUST match the server (GameState). The spawn schedule itself is sent
     // by the server (level.schedule), so it isn't rebuilt here.
@@ -1452,6 +1560,11 @@ GAME_HTML = """<!DOCTYPE html>
     var levelsMeta = [];    // /api/levels list, with campaign metadata
     var currentIndex = -1;  // index of the level currently loaded
     var campaignProgress = 0; // highest story mission completed (persisted in the browser)
+    // Anton's growth arc + reward scenes (ITEM-028)
+    var antonArc = [];        // courage lines by missions-completed
+    var antonFinale = {};     // the finale payload (title/caption/lines/scene)
+    var vigRAF = null;        // the reward-scene animation handle (so it can be cancelled)
+    var vignetteThenFinale = false; // after this vignette, play the finale?
 
     // Progress is stored in the browser so the fixed play order survives a reload.
     // Storage is optional — a browser that blocks it must never crash the page.
@@ -1551,6 +1664,174 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.fillStyle='rgba(255,247,237,.55)'; ctx.fillRect(0,0,canvas.width,canvas.height);
     }
 
+    // --- Reward vignettes + finale (ITEM-028) ---------------------------------
+    // A tiny, self-contained canvas animation engine. Everything is guarded: if a
+    // scene ever throws, the loop stops and the game keeps working (optional-feature
+    // rule). Pure canvas/JS, no libraries.
+    function updateAntonMood(){
+      var el=document.getElementById('antonMood'); if (!el) return;
+      if (!antonArc || !antonArc.length){ el.textContent=''; return; }
+      var i=Math.max(0, Math.min(antonArc.length-1, campaignProgress));
+      el.textContent='👻 ' + antonArc[i];
+    }
+    function stopVignetteAnim(){ if (vigRAF){ try { cancelAnimationFrame(vigRAF); } catch(e){} vigRAF=null; } }
+    function runSceneLoop(canvasId, sceneName){
+      var cv=document.getElementById(canvasId); if (!cv) return;
+      var c=null; try { c=cv.getContext('2d'); } catch(e){ return; }
+      if (!c) return;
+      var start=performance.now();
+      stopVignetteAnim();
+      function step(now){
+        var t=(now-start)/1000;
+        try {
+          c.clearRect(0,0,cv.width,cv.height);
+          drawScene(c, cv.width, cv.height, t, sceneName);
+        } catch(e){ stopVignetteAnim(); return; }   // never crash the page
+        vigRAF=requestAnimationFrame(step);
+      }
+      vigRAF=requestAnimationFrame(step);
+    }
+    // Gentle, fictional scenes — soft motion only, no real names/events.
+    function drawScene(c, w, h, t, name){
+      if (name==='lantern'){
+        // a warm lantern glow drifting up a dark half-timbered lane
+        c.fillStyle='#0b0704'; c.fillRect(0,0,w,h);
+        c.fillStyle='#1c140c';
+        c.fillRect(0,0,w*0.22,h); c.fillRect(w*0.78,0,w*0.22,h);
+        c.strokeStyle='rgba(120,80,40,.5)'; c.lineWidth=3;
+        for (var i=1;i<5;i++){ c.beginPath(); c.moveTo(0,h*i/5); c.lineTo(w*0.22,h*i/5 - 18); c.stroke();
+          c.beginPath(); c.moveTo(w*0.78,h*i/5-18); c.lineTo(w,h*i/5); c.stroke(); }
+        var gy=h-40 - (t*26)%(h+30);
+        var gr=c.createRadialGradient(w/2,gy,2, w/2,gy,46);
+        gr.addColorStop(0,'rgba(255,214,140,.95)'); gr.addColorStop(1,'rgba(255,180,80,0)');
+        c.fillStyle=gr; c.beginPath(); c.arc(w/2,gy,46,0,Math.PI*2); c.fill();
+        c.fillStyle='#ffcf87'; c.beginPath(); c.arc(w/2,gy,6,0,Math.PI*2); c.fill();
+        // neighbours passing buckets (dots bobbing)
+        for (var b=0;b<5;b++){ var bx=w*0.30+b*w*0.1; var by=h-24+Math.sin(t*2+b)*4;
+          c.fillStyle='#e7c9a0'; c.beginPath(); c.arc(bx,by,5,0,Math.PI*2); c.fill(); }
+      } else if (name==='records'){
+        // parchment ledger, a highlight sweeps down and reveals a shimmering name
+        c.fillStyle='#efe2c6'; c.fillRect(0,0,w,h);
+        c.strokeStyle='rgba(90,70,40,.5)'; c.lineWidth=2;
+        var lineY; for (var r=0;r<9;r++){ lineY=24+r*20; c.beginPath(); c.moveTo(30,lineY); c.lineTo(w-30, lineY); c.stroke(); }
+        var nameY=24+4*20;
+        var sweep=(t*40)%(h+40);
+        c.fillStyle='rgba(255,240,180,.25)'; c.fillRect(0, sweep-16, w, 22);
+        var glow=Math.max(0, Math.sin(t*1.5));
+        c.globalAlpha=0.4+0.6*glow; c.strokeStyle='#b8860b'; c.lineWidth=3;
+        c.beginPath(); c.moveTo(70, nameY); c.lineTo(w-120, nameY); c.stroke(); c.globalAlpha=1;
+        c.fillStyle='rgba(184,134,11,'+(0.5+0.5*glow)+')'; c.font='italic 14px system-ui'; c.textAlign='left';
+        c.fillText('… Anton, Wächter der Burg …', 74, nameY-5);
+        drawGhost(c, w-70, h/2, 1.1, 0.7+0.25*glow, -0.05, false, glow>0.6);
+      } else if (name==='storm'){
+        // wind lines settle, stars come out, people gather safely below
+        c.fillStyle='#0e1726'; c.fillRect(0,0,w,h);
+        var calm=Math.min(1, t/3);
+        c.strokeStyle='rgba(160,180,210,'+(0.5*(1-calm))+')'; c.lineWidth=2;
+        for (var s=0;s<7;s++){ var yy=20+s*24+Math.sin(t*4+s)*6*(1-calm);
+          c.beginPath(); c.moveTo(0,yy); c.lineTo(w*(0.5+0.5*(1-calm)), yy-10); c.stroke(); }
+        for (var st=0; st<18; st++){ var sx=(st*53%w), sy=(st*29%(h*0.6));
+          c.globalAlpha=calm*(0.4+0.6*Math.abs(Math.sin(t+st))); c.fillStyle='#fde68a';
+          c.beginPath(); c.arc(sx,sy,1.5,0,Math.PI*2); c.fill(); }
+        c.globalAlpha=1;
+        c.fillStyle='#14532d'; c.beginPath(); c.arc(w*0.2,h-30,22,0,Math.PI*2); c.fill();
+        c.fillStyle='#7a5230'; c.fillRect(w*0.2-4,h-26,8,20);
+        for (var p=0;p<6;p++){ var px=w*0.45+p*24, py=h-22+Math.sin(t*1.5+p)*2;
+          c.fillStyle='#cbd5e1'; c.beginPath(); c.arc(px,py,5,0,Math.PI*2); c.fill(); }
+      } else if (name==='festival'){
+        // night sky, gentle rising fireworks bursting, a warm crowd below
+        c.fillStyle='#0a0614'; c.fillRect(0,0,w,h);
+        for (var f=0; f<3; f++){
+          var period=2.4, phase=(t + f*0.8)%period, cx=w*(0.25+0.25*f), topY=h*0.25+f*10;
+          if (phase<1.0){ var ry=h-20-(h*0.7)*phase; c.fillStyle='#fca5a5';
+            c.beginPath(); c.arc(cx,ry,2,0,Math.PI*2); c.fill(); }
+          else { var br=(phase-1.0)*70, al=Math.max(0,1-(phase-1.0)/1.4);
+            c.strokeStyle='rgba(253,224,120,'+al+')'; c.lineWidth=2;
+            for (var a=0;a<10;a++){ var ang=a*Math.PI/5;
+              c.beginPath(); c.moveTo(cx,topY); c.lineTo(cx+Math.cos(ang)*br, topY+Math.sin(ang)*br); c.stroke(); } }
+        }
+        for (var q=0;q<10;q++){ var qx=20+q*w*0.096, qy=h-16+Math.sin(t*2+q)*2;
+          c.fillStyle='#e7c9a0'; c.beginPath(); c.arc(qx,qy,4,0,Math.PI*2); c.fill(); }
+      } else if (name==='helmet'){
+        // the community gathers and gives Anton the fire helmet, then he rises brighter
+        c.fillStyle='#0a0614'; c.fillRect(0,0,w,h);
+        var cx=w/2, cy=h*0.6;
+        for (var d=0; d<14; d++){ var ang=d*(Math.PI*2/14), rr=Math.min(w,h)*0.42;
+          var dx=cx+Math.cos(ang)*rr, dy=cy+Math.sin(ang)*rr*0.7 + Math.sin(t*1.4+d)*2;
+          c.fillStyle='#c7b8e6'; c.beginPath(); c.arc(dx,dy,5,0,Math.PI*2); c.fill(); }
+        var settle=Math.min(1, t/2.2);
+        var bright=0.7+0.3*Math.min(1,Math.max(0,(t-2.2)/1.5));
+        drawGhost(c, cx, cy, 1.6, 0.6+0.4*settle, (1-settle)*0.1, settle>=1, bright>0.9);
+        if (settle<1){  // helmet descending onto his head
+          var hy=cy-70 - (1-settle)* (h*0.35);
+          c.save(); c.translate(cx, hy); c.rotate(-0.2); c.fillStyle='#dc2626';
+          c.fillRect(-21,-3,42,8); c.beginPath(); c.arc(0,0,13,Math.PI,0); c.fill(); c.restore();
+        }
+        if (bright>0.9){ for (var k=0;k<8;k++){ var ka=t*2+k, kr=30+ (t*20)%40;
+          c.globalAlpha=Math.max(0,1-((t*20)%40)/40); c.fillStyle='#fde68a';
+          c.beginPath(); c.arc(cx+Math.cos(ka)*kr, cy-30+Math.sin(ka)*kr*0.6, 2,0,Math.PI*2); c.fill(); }
+          c.globalAlpha=1; }
+      }
+    }
+    function openVignette(vig, thenFinale){
+      vignetteThenFinale = !!thenFinale;
+      try {
+        document.getElementById('vigTitle').textContent = (vig && vig.title) || '';
+        document.getElementById('vigCaption').textContent = (vig && vig.caption) || '';
+        document.getElementById('vignette').style.display='flex';
+        runSceneLoop('vigCanvas', (vig && vig.scene) || 'lantern');
+      } catch(e){
+        stopVignetteAnim();
+        var v=document.getElementById('vignette'); if (v) v.style.display='none';
+        if (vignetteThenFinale){ vignetteThenFinale=false; openFinale(); } else showRecap();
+      }
+    }
+    function closeVignette(){
+      stopVignetteAnim();
+      var v=document.getElementById('vignette'); if (v) v.style.display='none';
+      if (vignetteThenFinale){ vignetteThenFinale=false; openFinale(); } else showRecap();
+    }
+    function openFinale(){
+      var fin = antonFinale || {};
+      try {
+        document.getElementById('finTitle').textContent = fin.title || 'Finale';
+        document.getElementById('finCaption').textContent = fin.caption || '';
+        var box=document.getElementById('finLines'); box.innerHTML='';
+        (fin.lines || []).forEach(function(ln){
+          var p=document.createElement('p'); p.textContent=ln; p.style.margin='.4rem 0'; box.appendChild(p);
+        });
+        document.getElementById('finale').style.display='flex';
+        runSceneLoop('finCanvas', fin.scene || 'helmet');
+      } catch(e){
+        stopVignetteAnim();
+        var el=document.getElementById('finale'); if (el) el.style.display='none';
+        showRecap();
+      }
+    }
+    function closeFinale(){
+      stopVignetteAnim();
+      var el=document.getElementById('finale'); if (el) el.style.display='none';
+      showRecap();
+    }
+    // Decide what plays when a level ends (ITEM-028): a campaign WIN unlocks its reward
+    // vignette (then the finale if the whole campaign is now complete), then the recap.
+    function handleEnd(){
+      if (!game) return;
+      var won = game.status==='won';
+      var completedCampaign=false;
+      if (won && isCampaign && missionNo){
+        if (missionNo>campaignProgress){ campaignProgress=missionNo; saveProgress(); renderLevelBar(); updateAntonMood(); }
+        completedCampaign = (campaignTotal()>0 && campaignProgress>=campaignTotal());
+      }
+      if (won && isCampaign && level && level.vignette && level.vignette.scene){
+        openVignette(level.vignette, completedCampaign);
+      } else if (won && completedCampaign){
+        openFinale();
+      } else {
+        showRecap();
+      }
+    }
+
     function showRecap(){
       if (!game) return;
       var total=game.schedule.length, handled=game.ext;
@@ -1575,13 +1856,11 @@ GAME_HTML = """<!DOCTYPE html>
       document.getElementById('recapClasses').innerHTML =
         '<div style="color:#9a6a4f; margin-bottom:.2rem;">Diese Feuer kamen vor:</div>' + rows;
 
-      // Anton closes the mission, notes the rescue bonus, and advances the campaign.
+      // Anton closes the mission and notes the rescue bonus. (Campaign progress is
+      // already advanced in handleEnd(), before the reward vignette/finale plays.)
       var antonEl=document.getElementById('recapAnton');
       var nextBtn=document.getElementById('recapNext');
       antonEl.textContent=''; nextBtn.style.display='none';
-      if (game.status==='won' && isCampaign && missionNo && missionNo>campaignProgress){
-        campaignProgress = missionNo; saveProgress(); renderLevelBar();
-      }
       if (isCampaign && antonLines){
         var msg = '';
         if (game.status==='won'){
@@ -1827,22 +2106,55 @@ GAME_HTML = """<!DOCTYPE html>
       }
       ctx.restore();
     }
+    // Draw Anton the ghost at (x,y) on any context. Shared by the board, the reward
+    // vignettes and the finale so his look stays consistent. (ITEM-028)
+    //   alpha = how solid he is, tilt = posture, helmet = wears the fire helmet,
+    //   bright = a touch brighter + a small smile (braver).
+    function drawGhost(c, x, y, scale, alpha, tilt, helmet, bright){
+      c.save();
+      c.translate(x, y); c.rotate(tilt||0); c.scale(scale, scale);
+      var base = bright ? 246 : 226;
+      c.globalAlpha = Math.max(0.2, Math.min(1, alpha));
+      c.fillStyle = 'rgb('+base+','+(base+4)+','+Math.min(255, base+14)+')';
+      c.beginPath(); c.arc(0,0,18,Math.PI,0);
+      c.lineTo(18,16);
+      c.quadraticCurveTo(9,24, 0,16);
+      c.quadraticCurveTo(-9,24, -18,16);
+      c.closePath(); c.fill();
+      c.globalAlpha = Math.min(1, alpha+0.12);
+      c.fillStyle='#334155';
+      c.beginPath(); c.arc(-6,-2,3,0,Math.PI*2); c.arc(6,-2,3,0,Math.PI*2); c.fill();
+      if (bright){  // a small confident smile
+        c.strokeStyle='#334155'; c.lineWidth=1.5; c.beginPath(); c.arc(0,4,5,0.15*Math.PI,0.85*Math.PI); c.stroke();
+      }
+      if (helmet){  // the little crooked fire helmet — only from the finale onward
+        c.save(); c.translate(0,-15); c.rotate(-0.2); c.globalAlpha=1; c.fillStyle='#dc2626';
+        c.fillRect(-13,-2,26,5); c.beginPath(); c.arc(0,0,8,Math.PI,0); c.fill(); c.restore();
+      }
+      c.restore();
+    }
+    function campaignTotal(){
+      var n=0; levelsMeta.forEach(function(l){ if (l.campaign && l.mission) n++; }); return n;
+    }
+    // Anton grows braver with each completed mission (0..1).
+    function antonBraveryFactor(){
+      var tot = campaignTotal() || 4;
+      return Math.max(0, Math.min(1, campaignProgress / tot));
+    }
+    // He only wears the helmet once the WHOLE campaign is complete (the finale gift).
+    function antonWearsHelmet(){
+      var tot = campaignTotal() || 4;
+      return campaignProgress >= tot;
+    }
     function drawAnton(){
       var now=performance.now();
-      var x=canvas.width-44, y=42 + Math.sin(now/500)*6;
-      ctx.save();
-      ctx.fillStyle='rgba(226,232,240,.92)';
-      ctx.beginPath(); ctx.arc(x,y,18,Math.PI,0);
-      ctx.lineTo(x+18,y+16);
-      ctx.quadraticCurveTo(x+9,y+24, x, y+16);
-      ctx.quadraticCurveTo(x-9,y+24, x-18, y+16);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle='#334155';
-      ctx.beginPath(); ctx.arc(x-6,y-2,3,0,Math.PI*2); ctx.arc(x+6,y-2,3,0,Math.PI*2); ctx.fill();
-      // little crooked fire helmet
-      ctx.save(); ctx.translate(x,y-15); ctx.rotate(-0.2); ctx.fillStyle='#dc2626';
-      ctx.fillRect(-13,-2,26,5); ctx.beginPath(); ctx.arc(0,0,8,Math.PI,0); ctx.fill(); ctx.restore();
-      ctx.restore();
+      var f=antonBraveryFactor();
+      // braver = rises up, stands more upright, more solid, a touch brighter.
+      var x=canvas.width-44;
+      var y=(54 - 14*f) + Math.sin(now/500)*(6 - 2*f);
+      var alpha=0.5 + 0.45*f;
+      var tilt=(1-f)*0.18 + Math.sin(now/900)*0.02;
+      drawGhost(ctx, x, y, 1, alpha, tilt, antonWearsHelmet(), f>0.6);
     }
     // Anton "senses" the trouble and marks the spot where fire will break out
     // (ITEM-026): a gentle pulsing ring at the start of the path with a small note,
@@ -1938,7 +2250,7 @@ GAME_HTML = """<!DOCTYPE html>
       if (performance.now() > feedbackUntil) document.getElementById('feedback').textContent='';
       render();
       if (game && game.status!==prevStatus){
-        if (game.status==='won' || game.status==='lost') showRecap();
+        if (game.status==='won' || game.status==='lost') handleEnd();
         updateControls();
         prevStatus = game.status;
       }
@@ -1958,7 +2270,7 @@ GAME_HTML = """<!DOCTYPE html>
         canvas.width = data.size.w; canvas.height = data.size.h;
         document.getElementById('place').textContent = data.name + ' · ' + data.place_de;
         setLives(data.building.lives);
-        updateControls(); updateBudget(); renderLevelBar();
+        updateControls(); updateBudget(); renderLevelBar(); updateAntonMood();
         // Anton opens the mission by sensing it and telling his anecdote.
         showMissionIntro();
       }).catch(function(){ document.getElementById('place').textContent='Einsatz konnte nicht geladen werden.'; });
@@ -2062,6 +2374,13 @@ GAME_HTML = """<!DOCTYPE html>
           'Datenbank ' + (h.status==='ok'?'bereit':'fehlt') + ' · ' + h.fire_classes + ' Brandklassen · ' + h.tools + ' Löschmittel';
       }).catch(function(){});
     }
+    // Anton's growth-arc lines + finale (ITEM-028). A fetch failure degrades quietly.
+    function loadAnton(){
+      return fetch('/api/anton').then(function(r){return r.json();}).then(function(d){
+        antonArc = (d && d.courage) || []; antonFinale = (d && d.finale) || {};
+        updateAntonMood();
+      }).catch(function(){ antonArc=[]; antonFinale={}; });
+    }
 
     document.getElementById('startBtn').onclick = onStartButton;
     document.getElementById('cardOk').onclick = function(){
@@ -2074,9 +2393,10 @@ GAME_HTML = """<!DOCTYPE html>
     document.getElementById('recapAgain').onclick = function(){
       document.getElementById('recap').style.display='none'; onStartButton();
     };
-    // Load classes, tools, and the fire-safety matrix first (the view, palette, and
-    // shot resolution need them), then the levels.
-    Promise.all([loadClasses(), loadTools(), loadMatrix()]).then(function(){ buildLevelBar(); });
+    document.getElementById('vigClose').onclick = closeVignette;
+    document.getElementById('finClose').onclick = closeFinale;
+    // Load classes, tools, the fire-safety matrix, and Anton's arc first, then levels.
+    Promise.all([loadClasses(), loadTools(), loadMatrix(), loadAnton()]).then(function(){ buildLevelBar(); });
     loadStatus();
     last = performance.now();
     requestAnimationFrame(frame);
@@ -2138,6 +2458,12 @@ def build_app():
     def api_tools() -> JSONResponse:
         """Tool palette info (name, cost, short label, colour) for placing towers."""
         return JSONResponse(tools_display())
+
+    @app.get("/api/anton")
+    def api_anton() -> JSONResponse:
+        """Anton's growth-arc courage lines and the campaign finale (ITEM-028).
+        Fetched once by the browser; a fetch failure degrades gracefully there."""
+        return JSONResponse({"courage": anton_arc_de(), "finale": finale_de()})
 
     @app.get("/api/matrix")
     def api_matrix() -> JSONResponse:

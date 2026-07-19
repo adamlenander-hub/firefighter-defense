@@ -796,3 +796,50 @@ def test_narration_guard_catches_a_dangerous_recommendation(monkeypatch):
     ok, problems = g.check_narration()
     assert not ok
     assert any("bibliothek" in p and "water" in p for p in problems)
+
+
+# --- ITEM-028: Anton's arc, reward vignettes, library name beat, and finale ----
+
+def test_anton_arc_has_a_courage_line_for_every_stage():
+    # A mood line for 0..N missions completed (N = number of story missions).
+    arc = g.anton_arc_de()
+    assert len(arc) == len(g.campaign_missions()) + 1
+    assert all(line.strip() for line in arc)
+
+
+def test_every_campaign_mission_has_a_reward_vignette():
+    for m in g.campaign_missions():
+        v = g.vignette_de(m["key"])
+        assert v.get("scene", "").strip(), f"{m['key']} vignette has no scene"
+        assert v.get("title", "").strip() and v.get("caption", "").strip()
+    # ...and it rides along in the level payload the browser fetches.
+    lib = g.level_by_key("bibliothek")
+    idx = next(i for i, lv in enumerate(g.LEVELS) if lv is lib)
+    assert g.level_json(idx)["vignette"]["scene"] == "records"
+
+
+def test_library_vignette_is_the_finds_his_name_beat():
+    cap = g.vignette_de("bibliothek")["caption"]
+    assert "Name" in cap or "name" in cap
+    assert "Anton" in cap
+
+
+def test_finale_delivers_the_closing_message():
+    fin = g.finale_de()
+    assert fin.get("scene") == "helmet"
+    assert len(fin.get("lines", [])) >= 3
+    blob = " ".join(fin["lines"])
+    # courage, compassion and community matter more than equipment
+    assert "Mut" in blob and "Mitgefühl" in blob and "Zusammenhalt" in blob
+    assert "Ausrüstung" in blob
+    # the helmet (Feuerwehrmütze) hand-over is present
+    assert "Feuerwehrmütze" in fin.get("caption", "")
+
+
+def test_arc_and_finale_do_not_change_any_fire_fact_or_level():
+    # ITEM-028 is narrative only: the matrix and every level's waves/budget/lives are
+    # untouched, and the safe-play guard still holds.
+    ok, problems = g.check_content()
+    assert ok, problems
+    ok2, problems2 = g.behaviour_check()
+    assert ok2, "; ".join(problems2)
