@@ -1867,44 +1867,131 @@ GAME_HTML = """<!DOCTYPE html>
       ctx.fillStyle=cssv('--ink')||'#1f2937'; ctx.font='700 13px system-ui'; ctx.textAlign='center';
       ctx.fillText(b.name_de||'Gebäude', b.x, bodyY+bodyH+16);
     }
-    // Two-tone flat flame with a friendly-evil face (ITEM-038 baseline). Every fire
-    // KEEPS its class letter badge + icon + reaction-ring shapes (greyscale-safe,
-    // ITEM-008). A single generic flame for all classes here; the per-type fire
-    // characters are a later item (ITEM-039), not built now.
+    // --- ITEM-039: distinctive animated fire characters, one per class ----------
+    // Each fire is a bigger evil-faced character whose SHAPE + idle animation reflect
+    // its type, drawn on top of the ITEM-038 two-tone flame + palette. The class
+    // LETTER badge + emoji icon + reaction-ring shapes are KEPT exactly (greyscale-
+    // and high-contrast-safe, ITEM-008) — the character art is decoration, never a
+    // replacement. Animation is cheap sin/time off the render clock, with a per-fire
+    // phase so a crowd doesn't pulse in lockstep. No fire fact / balance touched.
+    function drawEvilFace(c, s, sparkEyes, tt, ph){
+      c.fillStyle='#fff';
+      c.beginPath(); c.arc(-s*0.28,-s*0.05,s*0.17,0,Math.PI*2); c.arc(s*0.28,-s*0.05,s*0.17,0,Math.PI*2); c.fill();
+      if (sparkEyes){                       // jagged yellow spark pupils (electrical / metal)
+        c.fillStyle='#fde047';
+        for (var k=0;k<2;k++){ var ex=(k?1:-1)*s*0.28;
+          c.beginPath();
+          for (var a=0;a<8;a++){ var ang=a*Math.PI/4 + tt*3 + ph; var rad=(a%2? s*0.15 : s*0.06);
+            var px=ex+Math.cos(ang)*rad, py=-s*0.05+Math.sin(ang)*rad; a?c.lineTo(px,py):c.moveTo(px,py); }
+          c.closePath(); c.fill(); }
+      } else {
+        c.fillStyle='#101418';
+        c.beginPath(); c.arc(-s*0.28,-s*0.02,s*0.07,0,Math.PI*2); c.arc(s*0.28,-s*0.02,s*0.07,0,Math.PI*2); c.fill();
+      }
+      c.strokeStyle='#101418'; c.lineWidth=Math.max(2,s*0.06); c.lineCap='round';
+      c.beginPath(); c.moveTo(-s*0.45,-s*0.35); c.lineTo(-s*0.12,-s*0.2); c.moveTo(s*0.45,-s*0.35); c.lineTo(s*0.12,-s*0.2); c.stroke();
+      c.beginPath(); c.moveTo(-s*0.2,s*0.34); c.quadraticCurveTo(0,s*0.5,s*0.2,s*0.34); c.stroke();
+    }
+    // The shared two-tone flame body, with a live flicker on the hot inner core.
+    function drawFlameBody(c, s, col, flick){
+      c.fillStyle=col; flameShape(c, s, 1); c.fill();
+      c.save(); c.translate(0, s*0.18); c.fillStyle=shade(col,0.42); flameShape(c, s, 0.6 + flick*0.10); c.fill(); c.restore();
+    }
+    // Draw the per-type character in the fire's local (translated) coordinates.
+    function drawFireCharacter(c, cls, s, col, tt, ph, hc){
+      var flick = Math.sin(tt*8 + ph);
+      if (cls==='F'){                        // cooking oil — a burning pan
+        drawFlameBody(c, s*0.9, col, flick);
+        drawEvilFace(c, s*0.9, false, tt, ph);
+        c.fillStyle = hc ? '#c3cee0' : '#2b3546';   // dark pan silhouette at the base
+        c.beginPath(); c.ellipse(0, s*0.72, s*0.7, s*0.22, 0, 0, Math.PI); c.fill();
+        rr(c, -s*0.72, s*0.6, s*1.44, s*0.16, s*0.06); c.fill();
+        rr(c, s*0.66, s*0.58, s*0.72, s*0.12, s*0.05); c.fill();   // handle
+      } else if (cls==='B'){                 // liquids — bubbling green pool with flames
+        var green = hc ? '#5fd47a' : '#2ba84a';
+        c.save();                            // green pool (two-tone ellipse)
+        c.fillStyle=shade(green,-0.2); c.beginPath(); c.ellipse(0, s*0.72, s*0.85, s*0.3, 0,0,Math.PI*2); c.fill();
+        c.fillStyle=green; c.beginPath(); c.ellipse(0, s*0.68, s*0.78, s*0.24, 0,0,Math.PI*2); c.fill();
+        c.restore();
+        drawFlameBody(c, s*0.92, col, flick);       // flames (class colour) on the liquid
+        for (var bi=0; bi<3; bi++){                  // rising bubbles
+          var bp=((tt*0.6 + bi*0.4 + ph)%1), by=s*0.72 - bp*s, bx=(bi-1)*s*0.32;
+          c.globalAlpha=Math.max(0,1-bp); c.fillStyle=shade(green,0.5);
+          c.beginPath(); c.arc(bx, by, s*0.1*(1-bp*0.4), 0, Math.PI*2); c.fill();
+        }
+        c.globalAlpha=1;
+        drawEvilFace(c, s*0.92, false, tt, ph);
+      } else if (cls==='electrical'){        // electrical — spark eyes + thrown mini-sparks
+        drawFlameBody(c, s, col, flick);
+        c.strokeStyle = hc ? '#fff27a' : '#fde047'; c.lineWidth=Math.max(1.5,s*0.05); c.lineCap='round';
+        for (var si=0; si<4; si++){
+          var sp=((tt*1.4 + si*0.25 + ph)%1), ang=ph + si*1.9 + tt*0.5, r0=s*0.6 + sp*s*0.9;
+          var sx=Math.cos(ang)*r0, sy=Math.sin(ang)*r0 - s*0.1;
+          c.globalAlpha=Math.max(0,1-sp);
+          c.beginPath(); c.moveTo(sx,sy); c.lineTo(sx+Math.cos(ang)*s*0.22, sy+Math.sin(ang)*s*0.22); c.stroke();
+        }
+        c.globalAlpha=1;
+        c.beginPath(); c.moveTo(-s*0.1,-s*0.5); c.lineTo(s*0.06,-s*0.2); c.lineTo(-s*0.05,-s*0.05); c.lineTo(s*0.1,s*0.25); c.stroke();
+        drawEvilFace(c, s, true, tt, ph);
+      } else if (cls==='D'){                 // metals — intense white-hot spark-burst
+        var white = hc ? '#ffffff' : '#f8fafc';
+        drawFlameBody(c, s, col, flick);
+        c.fillStyle='rgba(255,255,255,'+(0.5+0.35*Math.abs(Math.sin(tt*7+ph)))+')';
+        c.beginPath(); c.arc(0, s*0.05, s*0.32, 0, Math.PI*2); c.fill();
+        var burst=0.5+0.5*Math.sin(tt*9+ph);
+        c.strokeStyle=white; c.lineWidth=Math.max(1.5,s*0.055); c.lineCap='round';
+        for (var di=0; di<8; di++){ var a2=di*Math.PI/4 + tt*0.8, r1=s*0.5, r2=s*(0.8+0.35*burst);
+          c.globalAlpha=0.4+0.5*burst;
+          c.beginPath(); c.moveTo(Math.cos(a2)*r1, Math.sin(a2)*r1 - s*0.05); c.lineTo(Math.cos(a2)*r2, Math.sin(a2)*r2 - s*0.05); c.stroke(); }
+        c.globalAlpha=1;
+        drawEvilFace(c, s, true, tt, ph);
+      } else if (cls==='C'){                 // gases — a sharp hissing jet flame + valve
+        var jw=Math.sin(tt*10+ph)*s*0.12;
+        c.fillStyle=shade(col,-0.3); rr(c, -s*0.2, s*0.55, s*0.4, s*0.35, s*0.08); c.fill();   // valve
+        c.save(); c.translate(0,-s*0.1);
+        c.fillStyle=col;                     // sharp elongated jet with a waver
+        c.beginPath(); c.moveTo(-s*0.35,s*0.5); c.quadraticCurveTo(-s*0.1+jw,-s*0.4, jw,-s*1.05); c.quadraticCurveTo(s*0.1+jw,-s*0.4, s*0.35,s*0.5); c.closePath(); c.fill();
+        c.fillStyle=shade(col,0.4);
+        c.beginPath(); c.moveTo(-s*0.16,s*0.4); c.quadraticCurveTo(jw,-s*0.2, jw*0.6,-s*0.7); c.quadraticCurveTo(s*0.16,-s*0.2, s*0.16,s*0.4); c.closePath(); c.fill();
+        c.restore();
+        drawEvilFace(c, s, false, tt, ph);
+      } else {                               // solids (A) + fallback — classic flame + ember log
+        drawFlameBody(c, s, col, flick);
+        c.fillStyle = hc ? '#5b3a22' : '#7a4a25';   // glowing ember log at the base
+        rr(c, -s*0.5, s*0.62, s*1.0, s*0.28, s*0.12); c.fill();
+        var eg=0.5+0.5*Math.sin(tt*6+ph);
+        c.fillStyle='rgba(255,170,60,'+(0.35+0.4*eg)+')';
+        c.beginPath(); c.arc(-s*0.2, s*0.76, s*0.08, 0, Math.PI*2); c.arc(s*0.18, s*0.76, s*0.07, 0, Math.PI*2); c.fill();
+        drawEvilFace(c, s, false, tt, ph);
+      }
+    }
     function drawFire(f){
       var p = pathPointAt(game.level.path, f.progress);
       var cls = classMap[f.cls] || {icon:'🔥', letter:'?'};
       var col = classColour(f.cls);
+      var hc = contrastEnabled;
       var reacting = f.reaction && performance.now() < (f.reactionUntil||0);
-      var s = 22, x = p[0], y = p[1];
+      var s = 26, x = p[0], y = p[1];                 // a bit bigger than before
+      var tt = performance.now()*0.001;
+      var ph = (f.id||0)*1.7;                          // per-fire phase (no lockstep)
       // reaction rings — KEEP the exact shapes (solid red = danger, dashed grey = useless)
       if (reacting && f.reaction==='danger'){
         ctx.beginPath(); ctx.arc(x,y,s+8,0,Math.PI*2); ctx.strokeStyle='#b91c1c'; ctx.lineWidth=4; ctx.stroke();
       } else if (reacting && f.reaction==='useless'){
         ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(x,y,s+7,0,Math.PI*2); ctx.strokeStyle='#9ca3af'; ctx.lineWidth=3; ctx.stroke(); ctx.setLineDash([]);
       }
+      // the distinctive animated character (per type)
       ctx.save(); ctx.translate(x,y);
-      // TONE 1 — outer flame (base class colour)
-      ctx.fillStyle=col; flameShape(ctx,s,1); ctx.fill();
-      // TONE 2 — inner hotter core (lighter shade), offset down
-      ctx.save(); ctx.translate(0,s*0.18); ctx.fillStyle=shade(col,0.42); flameShape(ctx,s,0.6); ctx.fill(); ctx.restore();
-      // friendly-evil face: eyes + pupils, angled brows, small mouth
-      ctx.fillStyle='#fff';
-      ctx.beginPath(); ctx.arc(-s*0.28,-s*0.05,s*0.17,0,Math.PI*2); ctx.arc(s*0.28,-s*0.05,s*0.17,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#101418';
-      ctx.beginPath(); ctx.arc(-s*0.28,-s*0.02,s*0.07,0,Math.PI*2); ctx.arc(s*0.28,-s*0.02,s*0.07,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle='#101418'; ctx.lineWidth=Math.max(2,s*0.06); ctx.lineCap='round';
-      ctx.beginPath(); ctx.moveTo(-s*0.45,-s*0.35); ctx.lineTo(-s*0.12,-s*0.2); ctx.moveTo(s*0.45,-s*0.35); ctx.lineTo(s*0.12,-s*0.2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-s*0.2,s*0.34); ctx.quadraticCurveTo(0,s*0.5,s*0.2,s*0.34); ctx.stroke();
+      drawFireCharacter(ctx, f.cls, s, col, tt, ph, hc);
       ctx.restore();
-      // letter badge (white circle + dark letter) — survives greyscale
+      // letter badge (white circle + dark letter) — survives greyscale, KEPT
       ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.arc(x+s*0.72,y-s*0.72,s*0.42,0,Math.PI*2); ctx.fill(); ctx.stroke();
       ctx.fillStyle='#101418'; ctx.font='700 '+(s*0.62)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(cls.letter||'?', x+s*0.72, y-s*0.70);
-      // class icon below
+      // class icon below — KEPT
       ctx.font=(s*0.7)+'px system-ui'; ctx.fillStyle='#101418'; ctx.fillText(cls.icon||'🔥', x, y+s*1.5);
-      // danger warning glyph — KEEP
+      // danger warning glyph — KEPT
       if (reacting && f.reaction==='danger'){ ctx.font='15px system-ui'; ctx.fillText('⚠️', x, y-s-14); }
       ctx.textBaseline='alphabetic';
     }

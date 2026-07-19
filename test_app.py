@@ -889,3 +889,32 @@ def test_visual_reskin_changed_no_fire_fact_or_balance():
     assert ok, problems
     ok2, problems2 = g.behaviour_check()
     assert ok2, "; ".join(problems2)
+
+
+# --- ITEM-039: distinctive animated fire characters (visual only) -------------
+
+def test_per_type_fire_characters_present():
+    html = g.render_game_html()
+    assert "function drawFireCharacter(" in html
+    assert "function drawEvilFace(" in html and "function drawFlameBody(" in html
+    # a distinct branch for each animated type Adam named + the judgement-call ones
+    for branch in ("cls==='F'", "cls==='B'", "cls==='electrical'", "cls==='D'", "cls==='C'"):
+        assert branch in html, branch
+
+
+def test_fire_characters_keep_greyscale_safe_signalling():
+    # The class LETTER badge, emoji icon, and reaction-ring shapes must still be drawn
+    # (ITEM-008) — the character art is decoration on top, never a replacement.
+    html = g.render_game_html()
+    fire = html[html.index("function drawFire(f){"):html.index("function drawOverlay")]
+    assert "cls.letter" in fire                     # letter badge
+    assert "cls.icon" in fire                       # emoji icon
+    assert "s+8" in fire and "setLineDash([4,4])" in fire   # danger + useless rings
+    assert "⚠" in fire                          # ⚠️ danger glyph
+
+
+def test_fire_characters_changed_no_fire_fact_or_balance():
+    ok, problems = g.check_content()
+    assert ok, problems
+    ok2, problems2 = g.behaviour_check()
+    assert ok2, "; ".join(problems2)
