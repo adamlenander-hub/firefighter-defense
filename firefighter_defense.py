@@ -1507,6 +1507,14 @@ GAME_HTML = """<!DOCTYPE html>
     h1 { margin: 0; font-size: 1.35rem; color: var(--ink); }
     .place { margin: .15rem 0 0; color: var(--muted); font-size: .9rem; }
     .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: center; }
+    /* ITEM-053 landscape-phone menus: the wrapper is a no-op outside the landscape
+       media query below (display:contents removes its own box, so its children
+       stay direct flex items of the STATUS .bar exactly as before — desktop and
+       portrait layout are byte-identical to today). */
+    #settingsGroup { display: contents; }
+    /* The two menu buttons only exist visually inside the landscape media query;
+       everywhere else they are hidden, so desktop/portrait never see them. */
+    .menu-btn { display: none; }
     .lives { font-size: 1.1rem; }
     button {
       font: inherit; padding: .55rem 1.05rem; border-radius: 14px; cursor: pointer;
@@ -1556,6 +1564,72 @@ GAME_HTML = """<!DOCTYPE html>
     @media (orientation: portrait) and (max-width: 900px) {
       canvas { width:auto; max-width:100%; max-height:48vh; margin:0 auto; }
     }
+
+    /* --- ITEM-053 landscape-phone layout (Option B: "menu"). Landscape PHONES are
+       short (height <= 500px); a landscape desktop monitor is landscape but tall,
+       so it never matches, and portrait never matches either — this block is fully
+       additive and only takes effect on short landscape screens. Everything here
+       only ADDS rules or overrides the two opt-in wrapper/buttons above; no existing
+       rule outside this block is changed. --- */
+    @media (orientation: landscape) and (max-height: 500px) {
+      body { padding: .35rem; gap: .3rem; }
+      .menu-btn { display: inline-flex; }
+
+      /* Compact header: keep a slim title, hide the subtitle/place/mood lines. */
+      header { line-height: 1.1; }
+      h1 { font-size: .78rem; margin: 0; }
+      header p { display: none; }
+
+      /* Mission dropdown: reuses the existing #levelBar mission buttons — it just
+         takes no space by default and becomes an anchored panel when opened. */
+      #levelBar {
+        position: absolute; top: 2.6rem; left: .35rem; display: none;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(31,41,55,.14); padding: .4rem; z-index: 30;
+        max-width: 82vw; max-height: 70vh; overflow: auto;
+      }
+      #levelBar.dd-open { display: flex; flex-direction: column; align-items: stretch; }
+
+      /* Settings dropdown: the wrapper becomes a real box again (undoing the
+         display:contents above) and is positioned under the ⚙ button. */
+      #settingsGroup {
+        position: absolute; top: 2.6rem; right: .35rem; display: none;
+        flex-direction: column; align-items: stretch; gap: .3rem; min-width: 200px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(31,41,55,.14); padding: .5rem; z-index: 30;
+      }
+      #settingsGroup.dd-open { display: flex; }
+      #settingsGroup label { min-height: 34px; }
+
+      /* Compact one-row palette with a small corner ℹ badge instead of the "ℹ Info"
+         button (DOM/text unchanged — only the badge's own text is hidden via
+         font-size:0 and re-shown through the ::before pseudo-element). */
+      #toolPalette { gap: .3rem; padding: 0; }
+      .tool { position: relative; }
+      .toolbtn { min-width: 56px; padding: .25rem .3rem; gap: 0; }
+      .toolbtn canvas { width: 22px; height: 30px; }
+      .toolbtn .tname { font-size: .62rem; }
+      .toolbtn .tcost { font-size: .58rem; }
+      .toolinfo {
+        position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;
+        min-height: 0; min-width: 0; padding: 0; border-radius: 50%; font-size: 0;
+        box-shadow: none; background: var(--line); color: var(--ink);
+      }
+      .toolinfo::before { content: "ℹ"; font-size: .62rem; }
+
+      /* Single ellipsised hint line; the feedback line, legends and footer are not
+         needed on a phone-landscape play screen. */
+      #hint {
+        display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        font-size: .68rem; max-width: 100%; margin: 0;
+      }
+      #feedback, .legend, #foot { display: none; }
+      #hazardControls { gap: .3rem; padding: 0; }
+
+      /* The board takes everything left over — no scrolling. */
+      .wrap { max-width: 100%; }
+      canvas { width: auto; max-width: 100%; max-height: calc(100dvh - 150px); margin: 0 auto; }
+    }
   </style>
 </head>
 <body>
@@ -1568,14 +1642,18 @@ GAME_HTML = """<!DOCTYPE html>
 
   <div class="bar" id="levelBar"></div>
   <div class="bar">
+    <button id="missionMenuBtn" class="menu-btn" type="button" aria-expanded="false">🎯 Mission ▾</button>
     <span class="lives" id="lives"></span>
     <span id="budget" style="font-weight:600;"></span>
     <button id="startBtn">Einsatz starten</button>
-    <label style="font-size:.85rem;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
-    <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
-    <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> Ton</label>
-    <button id="libBtn">Antons Wissen</button>
+    <span id="settingsGroup">
+      <label style="font-size:.85rem;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
+      <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
+      <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> Ton</label>
+      <button id="libBtn">Antons Wissen</button>
+    </span>
     <span id="info" style="color:var(--muted); font-size:.9rem;"></span>
+    <button id="gearMenuBtn" class="menu-btn" type="button" aria-expanded="false">⚙</button>
   </div>
 
   <div class="bar" id="toolPalette"></div>
@@ -3271,6 +3349,48 @@ GAME_HTML = """<!DOCTYPE html>
     var _soundCb = document.getElementById('soundToggle');
     if (_soundCb) _soundCb.onchange = function(e){ soundEnabled = e.target.checked; saveSound(e.target.checked); if (soundEnabled) initAudio(); };
     loadSound();
+
+    // --- ITEM-053 landscape-phone menus (Option B) — purely presentational: these
+    //     handlers only toggle a "dd-open" class, which has no visual effect unless
+    //     the landscape media query above is active, so they are harmless on desktop
+    //     and portrait. Every element lookup is guarded, so a missing element (e.g.
+    //     an older cached page) can never throw.
+    (function(){
+      var missionBtn = document.getElementById('missionMenuBtn');
+      var gearBtn = document.getElementById('gearMenuBtn');
+      var mLevelBar = document.getElementById('levelBar');
+      var mSettings = document.getElementById('settingsGroup');
+      function setOpen(el, btn, on){
+        if (!el) return;
+        el.classList.toggle('dd-open', !!on);
+        if (btn) btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      }
+      function closeMenus(){ setOpen(mLevelBar, missionBtn, false); setOpen(mSettings, gearBtn, false); }
+      if (missionBtn){
+        missionBtn.onclick = function(e){
+          if (e) e.stopPropagation();
+          var willOpen = !(mLevelBar && mLevelBar.classList.contains('dd-open'));
+          closeMenus(); setOpen(mLevelBar, missionBtn, willOpen);
+        };
+      }
+      if (gearBtn){
+        gearBtn.onclick = function(e){
+          if (e) e.stopPropagation();
+          var willOpen = !(mSettings && mSettings.classList.contains('dd-open'));
+          closeMenus(); setOpen(mSettings, gearBtn, willOpen);
+        };
+      }
+      if (mLevelBar){
+        mLevelBar.addEventListener('click', function(e){
+          if (e) e.stopPropagation();
+          if (e && e.target && e.target.tagName === 'BUTTON') setOpen(mLevelBar, missionBtn, false);
+        });
+      }
+      if (mSettings){
+        mSettings.addEventListener('click', function(e){ if (e) e.stopPropagation(); });
+      }
+      document.addEventListener('click', closeMenus);
+    })();
 
     // --- Spot-based keyboard control (ITEM-020): fully playable without a mouse.
     //     1..N pick an extinguisher; arrows move the build-spot highlight; Enter places;

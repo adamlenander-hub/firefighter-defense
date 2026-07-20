@@ -1230,3 +1230,55 @@ def test_visual_damage_mechanic_does_not_change_the_lose_condition():
         if gs.status != "playing":
             break
     assert gs.status == "lost" and gs.lives == 0
+
+
+# --- ITEM-053: responsive "landscape-phone" layout (Option B, menu) -----------
+# These are light drift guards on the generated page string, not a browser test:
+# they check the new landscape media query, the two menu buttons, the settings
+# wrapper, and the corner-info CSS are present, and that the menu buttons default
+# to hidden so desktop/portrait rendering can't regress.
+
+def test_landscape_media_query_present():
+    html = g.render_game_html()
+    assert "@media (orientation: landscape) and (max-height: 500px)" in html
+
+
+def test_menu_dom_additions_present():
+    html = g.render_game_html()
+    assert 'id="missionMenuBtn"' in html
+    assert 'id="gearMenuBtn"' in html
+    assert 'class="menu-btn"' in html
+    assert 'id="settingsGroup"' in html
+
+
+def test_menu_buttons_hidden_by_default_outside_landscape_query():
+    html = g.render_game_html()
+    # the default (non-media-query) rule must hide the menu buttons; only the
+    # landscape media query above re-enables them, so desktop/portrait never see
+    # a "Mission"/"⚙" chip that isn't there today.
+    style_and_media = html.split("@media (orientation: landscape) and (max-height: 500px)")[0]
+    assert ".menu-btn { display: none; }" in style_and_media or ".menu-btn{display:none}" in style_and_media.replace(" ", "")
+
+
+def test_settings_group_is_a_no_op_wrapper_outside_landscape_query():
+    html = g.render_game_html()
+    # display:contents keeps #settingsGroup's children as direct flex items of the
+    # STATUS bar outside the landscape query, so desktop layout is unchanged.
+    style_and_media = html.split("@media (orientation: landscape) and (max-height: 500px)")[0]
+    assert "#settingsGroup { display: contents; }" in style_and_media or \
+           "#settingsGroup{display:contents}" in style_and_media.replace(" ", "")
+
+
+def test_corner_info_badge_css_present():
+    html = g.render_game_html()
+    assert ".toolinfo::before" in html
+    assert 'content: "ℹ"' in html or 'content:"ℹ"' in html.replace(" ", "")
+
+
+def test_landscape_layout_is_visual_only_no_content_or_balance_regression():
+    # ITEM-053 is pure layout — the fire-safety content and safe-play guard must
+    # still be exactly as green as before this change.
+    ok, problems = g.check_content()
+    assert ok, problems
+    ok2, problems2 = g.behaviour_check()
+    assert ok2, "; ".join(problems2)
