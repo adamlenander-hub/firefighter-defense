@@ -2227,10 +2227,19 @@ GAME_HTML = """<!DOCTYPE html>
       c.beginPath(); c.moveTo(-s*0.45,-s*0.35); c.lineTo(-s*0.12,-s*0.2); c.moveTo(s*0.45,-s*0.35); c.lineTo(s*0.12,-s*0.2); c.stroke();
       c.beginPath(); c.moveTo(-s*0.2,s*0.34); c.quadraticCurveTo(0,s*0.5,s*0.2,s*0.34); c.stroke();
     }
-    // The shared two-tone flame body, with a live flicker on the hot inner core.
+    // The shared two-tone flame body. ITEM-052: the motion is turned up so fires read as
+    // lively rather than nearly still — the flame licks side to side (anchored at its base
+    // so it doesn't drift off the burning object), the whole flame breathes, and the hot
+    // inner core flickers harder. All driven off the existing per-fire flicker value, so no
+    // extra work per frame and each fire still moves on its own phase. Works at any size, so
+    // it composes with the bigger flames (ITEM-051) and the resist-shrink (ITEM-041).
     function drawFlameBody(c, s, col, flick){
-      c.fillStyle=col; flameShape(c, s, 1); c.fill();
-      c.save(); c.translate(0, s*0.18); c.fillStyle=shade(col,0.42); flameShape(c, s, 0.6 + flick*0.10); c.fill(); c.restore();
+      var lean = flick*0.16;                       // side-to-side lick amount
+      c.save();
+      c.transform(1, 0, lean, 1, -lean*s, 0);      // shear anchored at the base (y=+s): the tip sways, the base stays put
+      c.fillStyle=col; flameShape(c, s, 1 + flick*0.06); c.fill();                         // outer flame breathes
+      c.save(); c.translate(0, s*0.18); c.fillStyle=shade(col,0.42); flameShape(c, s, 0.55 + flick*0.22); c.fill(); c.restore();  // inner core flickers harder
+      c.restore();
     }
     // Draw the per-type character in the fire's local (translated) coordinates.
     function drawFireCharacter(c, cls, s, col, tt, ph, hc){
