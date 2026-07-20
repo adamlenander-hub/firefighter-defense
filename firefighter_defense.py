@@ -1515,7 +1515,7 @@ GAME_HTML = """<!DOCTYPE html>
     /* The two menu buttons only exist visually inside the landscape media query;
        everywhere else they are hidden, so desktop/portrait never see them. */
     .menu-btn { display: none; }
-    .lives { font-size: 1.1rem; }
+    .lives { font-size: 1.1rem; display: none; }
     button {
       font: inherit; padding: .55rem 1.05rem; border-radius: 14px; cursor: pointer;
       border: none; background: var(--panel); color: var(--ink);
@@ -2142,65 +2142,138 @@ GAME_HTML = """<!DOCTYPE html>
       if (remainFrac < 1) return 1;
       return 0;
     }
-    function drawSoot(x,bodyY,W,bodyH,hc){                 // light damage: soot streaks
-      ctx.save(); ctx.globalAlpha = hc?0.55:0.32; ctx.fillStyle = hc?'#000':'#2b2b2b';
-      for (var i=0;i<3;i++){
-        var sx=x+W*(0.18+i*0.32);
-        ctx.beginPath(); ctx.moveTo(sx-6,bodyY+bodyH*0.18); ctx.quadraticCurveTo(sx-2,bodyY-8,sx+7,bodyY-20);
-        ctx.lineTo(sx+2,bodyY-20); ctx.quadraticCurveTo(sx-6,bodyY-2,sx,bodyY+bodyH*0.18); ctx.closePath(); ctx.fill();
-      }
+    // ITEM-058 house-fire helpers. Everything is greyscale/high-contrast safe: the
+    // three damage stages are told apart by AMOUNT — size + number of flames, height
+    // of the smoke column, and (at the ruin) a structural roof collapse — never by
+    // hue alone. Flames flicker and smoke rises cheaply off performance.now(), and hc
+    // forces bright flame fills, white smoke and black/white structure.
+    function houseFlame(fx, baseY, s, ph, hc){            // one animated flame, base anchored, rising up
+      var flick = 0.5+0.5*Math.sin(performance.now()*0.006 + ph);
+      ctx.save();
+      ctx.translate(fx, baseY - s);
+      var lean = (flick-0.5)*0.5;
+      ctx.transform(1,0,lean,1,-lean*s,0);               // sway anchored at the base (y=+s)
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = hc?'#ffb703':'#f97316';            // outer flame
+      flameShape(ctx, s, 1 + flick*0.08); ctx.fill();
+      ctx.save(); ctx.translate(0, s*0.22);
+      ctx.fillStyle = hc?'#fff3b0':'#fbbf24';            // hot inner core
+      flameShape(ctx, s*0.9, 0.5 + flick*0.22); ctx.fill(); ctx.restore();
+      ctx.globalAlpha = 1;
       ctx.restore();
     }
-    function drawCracksAndLick(x,bodyY,W,bodyH,yTop,hc){   // heavy damage: cracks + a flame lick
-      ctx.save(); ctx.strokeStyle = hc?'#fff':'#1f2937'; ctx.lineWidth=1.4; ctx.globalAlpha=0.6;
-      ctx.beginPath();
-      ctx.moveTo(x+W*0.15,bodyY+4); ctx.lineTo(x+W*0.22,bodyY+bodyH*0.4); ctx.lineTo(x+W*0.14,bodyY+bodyH*0.72);
-      ctx.moveTo(x+W*0.82,bodyY+6); ctx.lineTo(x+W*0.76,bodyY+bodyH*0.5); ctx.lineTo(x+W*0.85,bodyY+bodyH*0.85);
-      ctx.stroke(); ctx.restore();
-      var flick = 0.5+0.5*Math.sin(performance.now()*0.006);
-      ctx.save(); ctx.globalAlpha = 0.65+0.3*flick; ctx.fillStyle = hc?'#ffb703':'#f59e0b';
-      ctx.beginPath(); ctx.moveTo(x+W-4, yTop+10); ctx.quadraticCurveTo(x+W+7,yTop-3,x+W-2,yTop-15);
-      ctx.quadraticCurveTo(x+W-11,yTop-3,x+W-4,yTop+10); ctx.closePath(); ctx.fill(); ctx.restore();
-    }
-    function drawSmokeRuin(bx, yTop, hc){                  // zero lives: rising smoke, no flame
+    function housePlume(cx, topY, hc, count, spread, height){   // rising smoke column
       var now=performance.now()*0.001;
-      ctx.save(); ctx.fillStyle = hc?'rgba(255,255,255,.6)':'rgba(90,90,90,.55)';
-      for (var i=0;i<3;i++){
-        var p=((now*0.28+i*0.33)%1), sx=bx+(i-1)*15, sy=yTop-8-p*46;
-        ctx.globalAlpha = Math.max(0,0.55*(1-p));
-        ctx.beginPath(); ctx.arc(sx, sy, 6+11*p, 0, Math.PI*2); ctx.fill();
+      ctx.save(); ctx.fillStyle = hc?'rgba(255,255,255,.6)':'rgba(64,64,64,.5)';
+      for (var i=0;i<count;i++){
+        var p=((now*0.3 + i/count)%1);
+        var sx=cx + Math.sin(now*0.8 + i*1.3)*spread*(0.4+p);
+        var sy=topY - p*height;
+        ctx.globalAlpha = Math.max(0, 0.6*(1-p*0.9));
+        ctx.beginPath(); ctx.arc(sx, sy, 5 + height*0.22*p, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1; ctx.restore();
+    }
+    function houseEmbers(cx, baseY, hc, spread, n){       // glowing embers drifting up
+      var now=performance.now()*0.001;
+      ctx.save();
+      for (var i=0;i<n;i++){
+        var p=((now*1.0 + i*0.41)%1);
+        var ex=cx + Math.sin(now*3 + i*2.1)*spread;
+        var ey=baseY - p*44;
+        ctx.globalAlpha = Math.max(0,1-p);
+        ctx.fillStyle = hc?'#ffffff':'#fde047';
+        ctx.beginPath(); ctx.arc(ex, ey, 1.4 + 1.6*(1-p), 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1; ctx.restore();
+    }
+    function houseScorch(x,bodyY,W,bodyH,hc,intensity){   // soot scorching up the walls
+      ctx.save(); ctx.globalAlpha=(hc?0.5:0.32)*intensity; ctx.fillStyle = hc?'#000':'#1c1c1c';
+      for (var i=0;i<4;i++){
+        var sx=x+W*(0.14+i*0.24);
+        ctx.beginPath(); ctx.moveTo(sx-7,bodyY+bodyH*0.2); ctx.quadraticCurveTo(sx-2,bodyY-10,sx+8,bodyY-24);
+        ctx.lineTo(sx+2,bodyY-24); ctx.quadraticCurveTo(sx-7,bodyY-2,sx,bodyY+bodyH*0.2); ctx.closePath(); ctx.fill();
       }
       ctx.restore();
+    }
+    // The staged fire/ruin overlay, drawn on top of the (degraded) house.
+    function drawHouseDamage(stage,x,bodyY,W,bodyH,yTop,bx,hc){
+      houseScorch(x,bodyY,W,bodyH,hc, stage>=2?1:0.7);
+      if (stage===1){                                     // a real, serious fire: several big flames + a tall window flame + a big plume
+        houseFlame(x+W*0.24, bodyY+2,  bodyH*0.46, 0.6, hc);   // left roof
+        houseFlame(x+W*0.52, yTop+4,   bodyH*0.52, 1.9, hc);   // near the apex
+        houseFlame(x+W*0.76, bodyY+2,  bodyH*0.48, 0.0, hc);   // right roof
+        houseFlame(x+21,     bodyY+30, bodyH*0.40, 1.1, hc);   // window, tall
+        housePlume(bx+6, yTop-6, hc, 7, 15, 78);
+        houseEmbers(bx, bodyY, hc, W*0.4, 5);
+      } else if (stage===2){                              // fully engulfed: many huge flames swallowing the house, thick smoke, embers
+        houseFlame(x+W*0.14, bodyY+4,  bodyH*0.56, 0.3, hc);
+        houseFlame(x+W*0.34, yTop-2,   bodyH*0.64, 1.7, hc);   // over the roof
+        houseFlame(x+W*0.52, yTop+2,   bodyH*0.70, 3.1, hc);   // apex, tallest
+        houseFlame(x+W*0.70, yTop-2,   bodyH*0.64, 4.5, hc);
+        houseFlame(x+W*0.88, bodyY+4,  bodyH*0.56, 5.6, hc);
+        houseFlame(x+21,     bodyY+30, bodyH*0.50, 3.4, hc);   // blown-out window
+        houseFlame(bx,       bodyY+bodyH*0.5, bodyH*0.46, 4.2, hc);   // door
+        housePlume(bx, yTop-8, hc, 10, 22, 104);
+        houseEmbers(bx, bodyY, hc, W*0.6, 14);
+      } else if (stage>=3){                               // smoking ruin: burned out, no active fire — a big billowing smoke column dominates
+        housePlume(bx-6, bodyY-6, hc, 14, 26, 150);
+        houseEmbers(bx, bodyY+bodyH*0.55, hc, W*0.4, 4);      // a few faint dim smoulders
+      }
     }
     function drawBuilding(b){
       var flashing = game && performance.now() < game.flashUntil;
       var hc=contrastEnabled;
       var stage = buildingDamageStage();
       var cream = flashing ? (hc?'#7a2b1e':'#f2b0a0') : (hc?'#e9d9b8':'#f3e4c2');
-      if (stage>=3) cream = hc?'#2b2f36':'#5b5348';        // charred, smoke-stained walls
-      else if (stage===2) cream = shade(cream,-0.10);
+      if (stage>=3) cream = hc?'#2b2f36':'#3a352e';        // charred, near-black walls
+      else if (stage===2) cream = shade(cream,-0.18);      // heavily scorched
+      else if (stage===1) cream = shade(cream,-0.08);      // singed
       var W=94, H=76, x=b.x-W/2, yTop=b.y-H/2;
       var bodyY=yTop+18, bodyH=H-18;
       // body — TONE1 + a TONE2 shadow plane on the right third
       ctx.fillStyle=cream; rr(ctx,x,bodyY,W,bodyH,12); ctx.fill();
       ctx.save(); rr(ctx,x,bodyY,W,bodyH,12); ctx.clip(); ctx.fillStyle=shade(cream,-0.12); ctx.fillRect(x+W*0.66,bodyY,W*0.34,bodyH); ctx.restore();
-      // roof — TONE1 red (turns bright red on damage flash) + TONE2 darker eave
+      // ruin: a jagged structural crack splitting the charred body
+      if (stage>=3){
+        ctx.save(); ctx.strokeStyle=hc?'#000':'#141414'; ctx.lineWidth=2.5; ctx.lineJoin='round';
+        ctx.beginPath(); ctx.moveTo(x+W*0.42,bodyY); ctx.lineTo(x+W*0.52,bodyY+bodyH*0.38); ctx.lineTo(x+W*0.44,bodyY+bodyH*0.68); ctx.lineTo(x+W*0.52,bodyY+bodyH); ctx.stroke();
+        ctx.restore();
+      }
+      // roof — intact red triangle (bright on damage flash) until the ruin, when it COLLAPSES into a broken slump
       var red = flashing ? (hc?'#ff5a4d':'#dc2626') : (cssv('--red')||'#e4572e');
-      if (stage>=3) red = hc?'#33363c':'#3f3a34';          // burnt-out roof, no more red
-      ctx.fillStyle=red; ctx.beginPath(); ctx.moveTo(x-6,bodyY+4); ctx.lineTo(x+W/2,yTop-8); ctx.lineTo(x+W+6,bodyY+4); ctx.closePath(); ctx.fill();
-      ctx.fillStyle=shade(red,-0.2); ctx.fillRect(x-6,bodyY,W+12,6);
-      // door + window — two-tone blue (dark/unlit once it's a ruin)
+      if (stage>=3){
+        red = hc?'#26282d':'#2a2621';                      // burnt-out, no more red
+        ctx.fillStyle=red; ctx.beginPath();
+        ctx.moveTo(x-6,bodyY+4);
+        ctx.lineTo(x+W*0.20,bodyY-6); ctx.lineTo(x+W*0.34,bodyY+9);
+        ctx.lineTo(x+W*0.52,bodyY-8); ctx.lineTo(x+W*0.68,bodyY+11);
+        ctx.lineTo(x+W*0.86,bodyY-2); ctx.lineTo(x+W+6,bodyY+4);
+        ctx.closePath(); ctx.fill();
+      } else {
+        if (stage>=1) red = shade(red,-0.16*stage);        // roof scorches as it burns
+        ctx.fillStyle=red; ctx.beginPath(); ctx.moveTo(x-6,bodyY+4); ctx.lineTo(x+W/2,yTop-8); ctx.lineTo(x+W+6,bodyY+4); ctx.closePath(); ctx.fill();
+        ctx.fillStyle=shade(red,-0.2); ctx.fillRect(x-6,bodyY,W+12,6);
+      }
+      // door + window — two-tone blue (dark/unlit as a ruin; window blown out once badly ablaze)
       var blue=cssv('--blue')||'#2f6fed', lit = stage<3;
       ctx.fillStyle=shade(blue,-0.15); rr(ctx,x+W/2-14,bodyY+18,28,bodyH-18,6); ctx.fill();
       ctx.fillStyle= lit ? blue : shade(blue,-0.5); rr(ctx,x+W/2-10,bodyY+22,20,bodyH-22,4); ctx.fill();
-      ctx.fillStyle= lit ? shade(blue,0.55) : shade(blue,-0.35); rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
+      if (stage>=2){                                       // blown-out window: dark hole + jagged glass shards
+        ctx.fillStyle= hc?'#000':'#160f06'; rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
+        ctx.strokeStyle= hc?'#fff':'#4a3720'; ctx.lineWidth=1.4;
+        ctx.beginPath();
+        ctx.moveTo(x+12,bodyY+12); ctx.lineTo(x+20,bodyY+21); ctx.lineTo(x+14,bodyY+30);
+        ctx.moveTo(x+30,bodyY+13); ctx.lineTo(x+22,bodyY+22); ctx.lineTo(x+28,bodyY+30);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle= shade(blue,0.55); rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
+      }
       // name label
       ctx.fillStyle=cssv('--ink')||'#1f2937'; ctx.font='700 13px system-ui'; ctx.textAlign='center';
       ctx.fillText(b.name_de||'Gebäude', b.x, bodyY+bodyH+16);
-      // ITEM-033: the staged damage overlay itself
-      if (stage>=1) drawSoot(x,bodyY,W,bodyH,hc);
-      if (stage===2) drawCracksAndLick(x,bodyY,W,bodyH,yTop,hc);
-      if (stage>=3) drawSmokeRuin(b.x, yTop, hc);
+      // ITEM-058: the dramatic staged fire/ruin overlay itself
+      if (stage>=1) drawHouseDamage(stage,x,bodyY,W,bodyH,yTop,b.x,hc);
     }
     // --- ITEM-039: distinctive animated fire characters, one per class ----------
     // Each fire is a bigger evil-faced character whose SHAPE + idle animation reflect
@@ -2831,7 +2904,7 @@ GAME_HTML = """<!DOCTYPE html>
       sprays=keep;
     }
 
-    function setLives(n){ var s=''; for (var i=0;i<n;i++) s+='❤️'; document.getElementById('lives').textContent = s + '  (' + n + ')'; }
+    function setLives(n){ var el=document.getElementById('lives'); if (el) el.textContent=''; }   // ITEM-058: on-screen lives counter removed — the house condition is the life gauge
     function currentWave(){ if (!game || !game.spawned) return 0; return game.schedule[game.spawned-1].wave + 1; }
     function totalWaves(){ return level && level.waves ? level.waves.length : 0; }
     function infoText(){
