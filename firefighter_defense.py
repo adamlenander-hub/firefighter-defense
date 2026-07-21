@@ -1604,9 +1604,19 @@ GAME_HTML = """<!DOCTYPE html>
       /* Compact one-row palette with a small corner ℹ badge instead of the "ℹ Info"
          button (DOM/text unchanged — only the badge's own text is hidden via
          font-size:0 and re-shown through the ::before pseudo-element). */
-      #toolPalette { gap: .3rem; padding: 0; }
-      .tool { position: relative; }
-      .toolbtn { min-width: 56px; padding: .25rem .3rem; gap: 0; }
+      /* ITEM-057 Version A: the six extinguishers become a VERTICAL side strip
+         pinned to the RIGHT edge of the play area (below the top bar). This frees
+         the horizontal palette row's height for the board. It reuses the compact
+         tile styling + corner-ℹ badge below, keeps each tile's tap target, and
+         scrolls internally if all six tiles don't fit the height. */
+      #toolPalette {
+        position: absolute; top: 3rem; right: .35rem; z-index: 20;
+        display: flex; flex-direction: column; align-items: stretch; gap: .3rem;
+        width: 60px; padding: 0; margin: 0;
+        max-height: calc(100dvh - 3.4rem); overflow-y: auto; overflow-x: hidden;
+      }
+      .tool { position: relative; width: 100%; }
+      .toolbtn { min-width: 0; width: 100%; padding: .25rem .2rem; gap: 0; }
       .toolbtn canvas { width: 22px; height: 30px; }
       .toolbtn .tname { font-size: .62rem; }
       .toolbtn .tcost { font-size: .58rem; }
@@ -1617,18 +1627,18 @@ GAME_HTML = """<!DOCTYPE html>
       }
       .toolinfo::before { content: "ℹ"; font-size: .62rem; }
 
-      /* Single ellipsised hint line; the feedback line, legends and footer are not
-         needed on a phone-landscape play screen. */
-      #hint {
-        display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        font-size: .68rem; max-width: 100%; margin: 0;
-      }
+      /* ITEM-057 Version A: the inline one-line hint is hidden on phone-landscape —
+         its text now lives on a one-time, dismissible pre-game instruction overlay
+         (#pregame). The feedback line, legends and footer stay off here too. */
+      #hint { display: none; }
       #feedback, .legend, #foot { display: none; }
       #hazardControls { gap: .3rem; padding: 0; }
 
-      /* The board takes everything left over — no scrolling. */
-      .wrap { max-width: 100%; }
-      canvas { width: auto; max-width: 100%; max-height: calc(100dvh - 150px); margin: 0 auto; }
+      /* The board fills the freed space: room on the right for the side strip, and
+         a taller height budget now that the palette row + hint line no longer sit
+         above it. It must not sit under the strip and must not scroll. */
+      .wrap { max-width: 100%; padding-right: 66px; box-sizing: border-box; }
+      canvas { width: auto; max-width: 100%; max-height: calc(100dvh - 96px); margin: 0 auto; }
     }
   </style>
 </head>
@@ -1738,6 +1748,20 @@ GAME_HTML = """<!DOCTYPE html>
       <p id="finCaption" style="font-style:italic; color:#ddd6fe; margin:.3rem 0;"></p>
       <div id="finLines" style="line-height:1.6; font-size:.98rem; text-align:left; margin:.4rem 0;"></div>
       <button id="finClose" class="active">Zum Fest 🎉</button>
+    </div>
+  </div>
+
+  <!-- ITEM-057 Version A: one-time, dismissible pre-game instruction overlay
+       (phone-landscape only). Its body text is filled from the inline #hint (same
+       exact German copy) so nothing is duplicated in markup. Styled with the shared
+       CSS variables to match the card/recap modals and stay high-contrast safe. It
+       never blocks the real "Einsatz starten" control — after dismissing it the
+       player starts normally. Dismiss by the button, the backdrop, or Esc. -->
+  <div id="pregame" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:15;">
+    <div style="background:var(--panel); color:var(--ink); max-width:30rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <h2 style="margin:.2rem 0; text-align:center;">So funktioniert's 🎮</h2>
+      <p id="pregameText" style="line-height:1.5; margin:.5rem 0 1rem;"></p>
+      <div style="text-align:center;"><button id="pregameOk" class="active">Los geht's! ▶</button></div>
     </div>
   </div>
 
@@ -3176,6 +3200,29 @@ GAME_HTML = """<!DOCTYPE html>
       }
     }
 
+    // ITEM-057 Version A: pre-game instruction overlay (phone-landscape only).
+    // The instruction copy is reused verbatim from the inline #hint element, so the
+    // German text stays in exactly one place. Shown once per level load, and ONLY
+    // when the landscape-phone media query matches — so desktop NEVER shows it. It
+    // is fully dismissible and never blocks the real "Einsatz starten" control.
+    var pregameShown = false;
+    function isPhoneLandscape(){
+      try { return window.matchMedia("(orientation: landscape) and (max-height: 500px)").matches; }
+      catch(e){ return false; }
+    }
+    function maybeShowPregame(){
+      if (pregameShown || !isPhoneLandscape()) return;
+      var pg=document.getElementById('pregame'); if (!pg) return;
+      var hint=document.getElementById('hint'), body=document.getElementById('pregameText');
+      if (body && hint) body.textContent = hint.textContent;   // reuse the exact copy
+      pg.style.display='flex'; pregameShown=true;
+      var ok=document.getElementById('pregameOk');
+      if (ok){ try { ok.focus(); } catch(e){} }
+    }
+    function hidePregame(){
+      var pg=document.getElementById('pregame'); if (pg) pg.style.display='none';
+    }
+
     var prevStatus='idle';
     function frame(now){
       var dt = Math.min((now - last)/1000, 0.05); last = now;
@@ -3215,6 +3262,9 @@ GAME_HTML = """<!DOCTYPE html>
         updateControls(); updateBudget(); renderLevelBar(); updateAntonMood();
         // Anton opens the mission by sensing it and telling his anecdote.
         showMissionIntro();
+        // ITEM-057 Version A: on phone-landscape, show the pre-game instruction
+        // overlay once for this freshly-loaded level (desktop/portrait never see it).
+        pregameShown = false; maybeShowPregame();
       }).catch(function(){ document.getElementById('place').textContent='Einsatz konnte nicht geladen werden.'; });
     }
 
@@ -3415,6 +3465,14 @@ GAME_HTML = """<!DOCTYPE html>
     document.getElementById('cardOk').onclick = function(){
       document.getElementById('card').style.display='none'; paused=false; last=performance.now();
     };
+    // ITEM-057 Version A: pre-game overlay dismissal — button, backdrop tap, and Esc
+    // (Esc is handled at the top of the keydown listener below). None of these touch
+    // how a wave actually starts; the player still presses "Einsatz starten".
+    (function(){
+      var pg=document.getElementById('pregame'), ok=document.getElementById('pregameOk');
+      if (ok) ok.onclick = function(){ hidePregame(); };
+      if (pg) pg.addEventListener('click', function(e){ if (e.target===pg) hidePregame(); });
+    })();
     document.getElementById('cardsToggle').onchange = function(e){ cardsEnabled = e.target.checked; };
     document.getElementById('libBtn').onclick = openLib;
     document.getElementById('libClose').onclick = closeLib;
@@ -3511,6 +3569,14 @@ GAME_HTML = """<!DOCTYPE html>
     }
     function selectToolSlot(n){ if (!toolsList || n<1 || n>toolsList.length) return; selectedTool=toolsList[n-1].id; updateBudget(); }
     document.addEventListener('keydown', function(e){
+      // ITEM-057 Version A: while the pre-game overlay is open it is modal — Esc
+      // closes it, its focused "Los geht's" button still activates natively, and all
+      // other game keys are swallowed so they can't act on the hidden board.
+      var pg=document.getElementById('pregame');
+      if (pg && pg.style.display && pg.style.display!=='none'){
+        if (e.key==='Escape' || e.key==='Esc'){ hidePregame(); e.preventDefault(); }
+        return;
+      }
       if (anyOverlayOpen() || isFormFocus()) return;
       var k=e.key;
       if (k>='1' && k<='9'){ selectToolSlot(parseInt(k,10)); e.preventDefault(); return; }

@@ -1205,7 +1205,9 @@ def test_remove_tower_reachable_by_touch_and_keyboard_in_js():
 def test_building_damage_stage_reflects_remaining_lives_in_js():
     html = g.render_game_html()
     assert "function buildingDamageStage()" in html
-    assert "function drawSmokeRuin(" in html and "function drawCracksAndLick(" in html
+    # ITEM-058 reworked the ITEM-033 damage visuals into the house-fire helpers; the
+    # staged overlay is drawn by drawHouseDamage() using houseFlame() etc.
+    assert "function drawHouseDamage(" in html and "function houseFlame(" in html
 
 
 def test_anton_worry_and_flee_are_present_and_separate_from_bravery_in_js():
@@ -1278,6 +1280,74 @@ def test_corner_info_badge_css_present():
 def test_landscape_layout_is_visual_only_no_content_or_balance_regression():
     # ITEM-053 is pure layout — the fire-safety content and safe-play guard must
     # still be exactly as green as before this change.
+    ok, problems = g.check_content()
+    assert ok, problems
+    ok2, problems2 = g.behaviour_check()
+    assert ok2, "; ".join(problems2)
+
+
+# --- ITEM-057: "Version A" phone-landscape refinement (side strip + pre-game) --
+# Light drift guards on the generated page string, matching the Option-B style
+# above: they assert the landscape media query lays #toolPalette out as a vertical
+# side strip, the inline #hint is hidden there, the dismissible pre-game overlay
+# exists with its "Los geht's" control, and the matchMedia landscape guard is used
+# to gate showing it (so desktop never sees it). Desktop/portrait are unaffected.
+
+def _landscape_block(html):
+    # The CSS inside the phone-landscape media query, up to its closing (the next
+    # "</style>"). Used to prove rules live INSIDE the landscape query only.
+    after = html.split("@media (orientation: landscape) and (max-height: 500px)", 1)[1]
+    return after.split("</style>", 1)[0]
+
+
+def test_landscape_toolpalette_is_a_vertical_side_strip():
+    html = g.render_game_html()
+    block = _landscape_block(html)
+    # #toolPalette is repositioned as an absolutely-positioned vertical column
+    # pinned to the right edge, scrollable, ~56-64px wide — all inside the query.
+    assert "#toolPalette {" in block
+    tp = block.split("#toolPalette {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in tp
+    assert "flex-direction: column" in tp
+    assert "right:" in tp
+    assert "overflow-y: auto" in tp
+
+
+def test_landscape_board_makes_room_for_the_strip():
+    html = g.render_game_html()
+    block = _landscape_block(html)
+    # the board reserves room on the right for the strip and raises its height budget.
+    assert "padding-right:" in block
+    assert "max-height: calc(100dvh - 96px)" in block
+
+
+def test_landscape_inline_hint_is_hidden():
+    html = g.render_game_html()
+    block = _landscape_block(html)
+    assert "#hint { display: none; }" in block
+
+
+def test_pregame_overlay_exists_with_dismiss_control():
+    html = g.render_game_html()
+    # the pre-game instruction overlay element + its dismiss button/label exist.
+    assert 'id="pregame"' in html
+    assert 'id="pregameText"' in html
+    assert 'id="pregameOk"' in html
+    assert "Los geht's" in html
+
+
+def test_pregame_is_gated_by_the_matchmedia_landscape_guard():
+    html = g.render_game_html()
+    # showing the pre-game screen is gated by the exact landscape matchMedia query,
+    # so desktop/portrait never trigger it.
+    assert 'matchMedia("(orientation: landscape) and (max-height: 500px)")' in html
+    assert "function maybeShowPregame(" in html
+    # Esc/backdrop/button dismissal wiring is present.
+    assert "function hidePregame(" in html
+
+
+def test_version_a_is_visual_only_no_content_or_balance_regression():
+    # ITEM-057 is layout/overlay only — content and safe-play guard stay green.
     ok, problems = g.check_content()
     assert ok, problems
     ok2, problems2 = g.behaviour_check()
