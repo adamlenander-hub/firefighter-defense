@@ -1,0 +1,176 @@
+
+    /* --- ITEM-038 two-tone flat palette, as CSS variables (matches the approved
+       mockup). body.hc overrides the SAME variables, so the high-contrast toggle
+       (ITEM-020) keeps working for every element that uses them. --- */
+    :root{
+      color-scheme: light dark;
+      --page:#f4f7fc; --ink:#1f2937; --muted:#5b6b7f;
+      --red:#e4572e; --blue:#2f6fed; --panel:#ffffff; --line:#e4ebf5;
+      --a:#f59e0b; --b:#8b5cf6; --c:#14b8a6; --e:#2f6fed; --d:#64748b; --f:#d6409f;
+    }
+    body.hc{
+      --page:#0b0d12; --ink:#ffffff; --muted:#cbd5e1;
+      --red:#ff7a4d; --blue:#7cb0ff; --panel:#161a22; --line:#39414f;
+      --a:#ffc247; --b:#c4a7ff; --c:#4fe6cf; --e:#7cb0ff; --d:#c3cee0; --f:#ff86d3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 1rem; min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--page); color: var(--ink);
+      transition: background .2s, color .2s;
+      display: flex; flex-direction: column; align-items: center; gap: .6rem;
+    }
+    header { text-align: center; }
+    h1 { margin: 0; font-size: 1.35rem; color: var(--ink); }
+    .place { margin: .15rem 0 0; color: var(--muted); font-size: .9rem; }
+    .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: center; }
+    /* ITEM-053 landscape-phone menus: the wrapper is a no-op outside the landscape
+       media query below (display:contents removes its own box, so its children
+       stay direct flex items of the STATUS .bar exactly as before — desktop and
+       portrait layout are byte-identical to today). */
+    #settingsGroup { display: contents; }
+    /* The two menu buttons only exist visually inside the landscape media query;
+       everywhere else they are hidden, so desktop/portrait never see them. */
+    .menu-btn { display: none; }
+    .lives { font-size: 1.1rem; display: none; }
+    button {
+      font: inherit; padding: .55rem 1.05rem; border-radius: 14px; cursor: pointer;
+      border: none; background: var(--panel); color: var(--ink);
+      box-shadow: 0 2px 0 var(--line); font-weight: 600;
+      min-height: 44px;                 /* comfortable finger target (ITEM-020) */
+    }
+    button.active { background: var(--red); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.15); }
+    button:disabled { opacity: .5; cursor: default; }
+    label { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; color: var(--muted); }
+    label input { width: 20px; height: 20px; }
+    /* ITEM-036 extinguisher palette cards: graphic + label + info affordance */
+    .tool { display: inline-flex; flex-direction: column; align-items: stretch; gap: .2rem; }
+    .toolbtn { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .4rem .5rem; min-width: 70px; }
+    .toolbtn canvas { display: block; }
+    .toolbtn .tname { font-size: .74rem; font-weight: 700; }
+    .toolbtn .tcost { font-size: .68rem; color: var(--muted); }
+    .toolbtn.active .tcost { color: rgba(255,255,255,.9); }
+    .toolinfo { min-height: 34px; padding: .15rem .5rem; font-size: .74rem; border-radius: 10px; box-shadow: 0 1px 0 var(--line); }
+    .wrap { width: 100%; max-width: 960px; }
+    canvas {
+      width: 100%; height: auto; border-radius: 22px; box-shadow: 0 10px 30px rgba(31,41,55,.12);
+      background: var(--panel); display:block;
+      touch-action: manipulation;       /* reliable taps, no double-tap zoom delay */
+    }
+    .legend { display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; color:var(--muted); font-size:.82rem; }
+    .legend span::before { content:"● "; }
+    .foot { color:var(--muted); font-size:.8rem; }
+    #hint { color: var(--muted); }
+
+    /* Large text in high-contrast so it reads across a room / on a projector
+       (ITEM-020). Colours come from the body.hc variables above; this only bumps
+       sizes and forces a plain dark board frame. */
+    body.hc { font-size: 1.12rem; }
+    body.hc canvas { border: 2px solid var(--line); box-shadow: none; }
+    body.hc #hint, body.hc #feedback, body.hc .legend,
+    body.hc .place, body.hc #antonMood, body.hc label { font-size: 1.05rem !important; }
+
+    /* --- Portrait / small-screen: cap the board so the extinguisher palette and
+       controls stay on-screen and reachable during play (ITEM-020). --- */
+    @media (max-width: 720px) {
+      body { padding: .5rem; }
+      h1 { font-size: 1.12rem; }
+      .wrap { max-width: 100%; }
+      canvas { width:auto; max-width:100%; max-height:52vh; margin:0 auto; }
+    }
+    @media (orientation: portrait) and (max-width: 900px) {
+      canvas { width:auto; max-width:100%; max-height:48vh; margin:0 auto; }
+    }
+
+    /* --- ITEM-053 landscape-phone layout (Option B: "menu"). Landscape PHONES are
+       short (height <= 500px); a landscape desktop monitor is landscape but tall,
+       so it never matches, and portrait never matches either — this block is fully
+       additive and only takes effect on short landscape screens. Everything here
+       only ADDS rules or overrides the two opt-in wrapper/buttons above; no existing
+       rule outside this block is changed. --- */
+    @media (orientation: landscape) and (max-height: 500px) {
+      body { padding: .35rem; gap: .3rem; }
+      .menu-btn { display: inline-flex; }
+
+      /* Compact header: keep a slim title, hide the subtitle/place/mood lines. */
+      header { line-height: 1.1; }
+      h1 { font-size: .78rem; margin: 0; }
+      header p { display: none; }
+
+      /* Mission dropdown: reuses the existing #levelBar mission buttons — it just
+         takes no space by default and becomes an anchored panel when opened. */
+      #levelBar {
+        position: absolute; top: 2.6rem; left: .35rem; display: none;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(31,41,55,.14); padding: .4rem; z-index: 30;
+        max-width: 82vw; max-height: 70vh; overflow: auto;
+      }
+      #levelBar.dd-open { display: flex; flex-direction: column; align-items: stretch; }
+
+      /* Settings dropdown: the wrapper becomes a real box again (undoing the
+         display:contents above) and is positioned under the ⚙ button. */
+      #settingsGroup {
+        position: absolute; top: 2.6rem; right: .35rem; display: none;
+        flex-direction: column; align-items: stretch; gap: .3rem; min-width: 200px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(31,41,55,.14); padding: .5rem; z-index: 30;
+      }
+      #settingsGroup.dd-open { display: flex; }
+      #settingsGroup label { min-height: 34px; }
+
+      /* Compact one-row palette with a small corner ℹ badge instead of the "ℹ Info"
+         button (DOM/text unchanged — only the badge's own text is hidden via
+         font-size:0 and re-shown through the ::before pseudo-element). */
+      /* ITEM-057 Version A: the six extinguishers sit in a compact block pinned to
+         the RIGHT edge of the play area (below the top bar) — a 2-columns-of-3 grid
+         so all six fit on a short landscape screen without scrolling off the bottom.
+         Reuses the compact tile styling + corner-ℹ badge below, keeps each tile's
+         tap target, and still scrolls internally as a safety net if space is tiny. */
+      #toolPalette {
+        position: absolute; top: 3rem; right: .35rem; z-index: 20;
+        display: grid; grid-template-columns: repeat(2, 58px); gap: .3rem;
+        align-content: start; padding: 0; margin: 0;
+        max-height: calc(100dvh - 3.4rem); overflow-y: auto; overflow-x: hidden;
+      }
+      .tool { position: relative; width: 100%; }
+      .toolbtn { min-width: 0; width: 100%; padding: .25rem .2rem; gap: 0; }
+      .toolbtn canvas { width: 22px; height: 30px; }
+      .toolbtn .tname { font-size: .62rem; }
+      .toolbtn .tcost { font-size: .58rem; }
+      .toolinfo {
+        position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;
+        min-height: 0; min-width: 0; padding: 0; border-radius: 50%; font-size: 0;
+        box-shadow: none; background: var(--line); color: var(--ink);
+      }
+      .toolinfo::before { content: "ℹ"; font-size: .62rem; }
+
+      /* ITEM-057 Version A: the inline one-line hint is hidden on phone-landscape —
+         its text now lives on a one-time, dismissible pre-game instruction overlay
+         (#pregame). The feedback line, legends and footer stay off here too. */
+      #hint { display: none; }
+      #feedback, .legend, #foot { display: none; }
+      #hazardControls { gap: .3rem; padding: 0; }
+
+      /* The board fills the freed space: room on the right for the side strip, and
+         a taller height budget now that the palette row + hint line no longer sit
+         above it. It must not sit under the strip and must not scroll. */
+      .wrap { max-width: 100%; padding-right: 132px; box-sizing: border-box; }
+      canvas { width: auto; max-width: 100%; max-height: calc(100dvh - 96px); margin: 0 auto; }
+
+      /* ITEM-057 fix: on a short landscape screen the fullscreen instruction/story
+         modals (the pre-game screen, Anton's mission intro, the recap, Antons Wissen)
+         must FIT — otherwise their dismiss button falls below the fold and can't be
+         reached. Cap each card to the viewport and make only its long TEXT scroll: the
+         icon/title stay at the top and the dismiss button stays in normal flow at the
+         bottom, always visible without scrolling. */
+      #card > div, #pregame > div, #recap > div, #lib > div, #vignette > div, #finale > div {
+        max-height: calc(100dvh - .6rem); display: flex; flex-direction: column;
+      }
+      #cardText, #pregameText, #libBody, #recapClasses {
+        flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      }
+      /* a little more reading room for the modal text on a short landscape screen */
+      #cardTitle { font-size: 1.05rem; }
+    }
+  

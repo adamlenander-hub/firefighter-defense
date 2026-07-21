@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firefighter Defense — Königstein</title>
+  <style>/*__FD_STYLES__*/</style>
+</head>
+<body>
+  <header>
+    <h1>Firefighter Defense — Königstein</h1>
+    <p style="margin:.1rem 0; font-size:.85rem; color:var(--red); font-weight:600;">🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre</p>
+    <p class="place" id="place">Einsatz wird geladen …</p>
+    <p id="antonMood" style="margin:.1rem 0 0; font-size:.82rem; font-style:italic; color:var(--muted);"></p>
+  </header>
+
+  <div class="bar" id="levelBar"></div>
+  <div class="bar">
+    <button id="missionMenuBtn" class="menu-btn" type="button" aria-expanded="false">🎯 Mission ▾</button>
+    <span class="lives" id="lives"></span>
+    <span id="budget" style="font-weight:600;"></span>
+    <button id="startBtn">Einsatz starten</button>
+    <span id="settingsGroup">
+      <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
+      <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> Ton</label>
+      <button id="libBtn">Antons Wissen</button>
+    </span>
+    <span id="info" style="color:var(--muted); font-size:.9rem;"></span>
+    <button id="gearMenuBtn" class="menu-btn" type="button" aria-expanded="false">⚙</button>
+  </div>
+
+  <div class="bar" id="toolPalette"></div>
+  <div class="bar" id="hazardControls"></div>
+  <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Löscher leeren sich (Anzeige am Turm) und müssen ersetzt werden. Falsch gebaut? Ohne gewählten Löscher auf den Turm tippen, um ihn abzubauen (keine Rückerstattung). Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Rücktaste/Entf baut ab, Leertaste startet.</p>
+  <p id="feedback" style="min-height:1.3em; font-weight:600; text-align:center; margin:.2rem 0;"></p>
+
+  <div class="wrap"><canvas id="board" width="960" height="540"></canvas></div>
+
+  <div class="legend" id="classLegend"></div>
+  <div class="legend">
+    <span style="color:#c2410c">Start</span>
+    <span style="color:#a8a29e">Weg zum Gebäude</span>
+    <span style="color:#0369a1">Bauplatz für Löscher</span>
+    <span style="color:#15803d">Gebäude</span>
+  </div>
+  <p class="foot" id="foot">&nbsp;</p>
+
+  <!-- Anton's "meet the fire" card (ITEM-011) -->
+  <div id="card" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); align-items:center; justify-content:center; z-index:10;">
+    <div style="background:var(--panel); color:var(--ink); max-width:26rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <div id="cardIcon" style="font-size:2.6rem;"></div>
+      <h3 id="cardTitle" style="margin:.3rem 0;"></h3>
+      <p id="cardText" style="line-height:1.5;"></p>
+      <p id="cardAttrib" style="font-size:.8rem; color:var(--muted); margin:.6rem 0;">— Anton, der Burggeist 👻</p>
+      <button id="cardOk">Verstanden</button>
+    </div>
+  </div>
+
+  <!-- End-of-level recap (ITEM-013) -->
+  <div id="recap" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:11;">
+    <div style="background:var(--panel); color:var(--ink); max-width:30rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <h2 id="recapTitle" style="margin:.2rem 0; text-align:center;"></h2>
+      <p id="recapScore" style="text-align:center; font-size:1.15rem; font-weight:600; margin:.3rem 0;"></p>
+      <p id="recapLine" style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;"></p>
+      <p id="recapAnton" style="text-align:center; font-style:italic; color:var(--ink); margin:.2rem 0 .8rem; line-height:1.5;"></p>
+      <div id="recapClasses" style="font-size:.9rem;"></div>
+      <div style="text-align:center; margin-top:1rem; display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap;">
+        <button id="recapNext" class="active" style="display:none;">Nächster Einsatz ▶</button>
+        <button id="recapAgain">Neu starten</button>
+        <button id="recapLib">Antons Wissen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Antons Wissen library (ITEM-014) -->
+  <div id="lib" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:12;">
+    <div style="background:var(--panel); color:var(--ink); max-width:34rem; max-height:86vh; overflow:auto; margin:1rem; padding:1.2rem 1.4rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <h2 style="margin:.2rem 0; text-align:center;">Antons Wissen 👻</h2>
+      <p style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;">Welcher Löscher passt zu welchem Feuer?</p>
+      <div id="libBody" style="font-size:.9rem;"></div>
+      <div style="text-align:center; margin-top:1rem;"><button id="libClose">Schließen</button></div>
+    </div>
+  </div>
+
+  <!-- Tool info pop-up (ITEM-036) — the extinguisher graphic + its guarded facts -->
+  <div id="toolInfo" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); align-items:center; justify-content:center; z-index:12;">
+    <div style="background:var(--panel); color:var(--ink); max-width:24rem; margin:1rem; padding:1.2rem 1.4rem; border-radius:20px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <canvas id="tiCanvas" width="62" height="80" style="display:block; margin:0 auto .2rem;"></canvas>
+      <h3 id="tiTitle" style="margin:.2rem 0;"></h3>
+      <div id="tiBody" style="font-size:.92rem; text-align:left;"></div>
+      <div style="text-align:center; margin-top:1rem;"><button id="tiClose">Schließen</button></div>
+    </div>
+  </div>
+
+  <!-- Reward vignette — a short animated scene after a mission win (ITEM-028) -->
+  <div id="vignette" style="display:none; position:fixed; inset:0; background:rgba(20,10,5,.72); align-items:center; justify-content:center; z-index:13;">
+    <div style="background:#1f1206; color:#fff7ed; max-width:32rem; margin:1rem; padding:1rem 1.2rem; border-radius:18px; box-shadow:0 20px 50px rgba(0,0,0,.5); text-align:center;">
+      <h3 id="vigTitle" style="margin:.2rem 0; color:#fdba74;"></h3>
+      <canvas id="vigCanvas" width="480" height="220" style="width:100%; height:auto; border-radius:12px; background:#0b0704; display:block; margin:.4rem 0;"></canvas>
+      <p id="vigCaption" style="line-height:1.5; font-size:.95rem;"></p>
+      <p style="font-size:.78rem; color:#c9a98f; margin:.4rem 0;">— Anton, der Burggeist 👻</p>
+      <button id="vigClose" class="active">Weiter</button>
+    </div>
+  </div>
+
+  <!-- One-time finale — the community gives Anton his helmet + closing message (ITEM-028) -->
+  <div id="finale" style="display:none; position:fixed; inset:0; background:rgba(10,6,20,.85); align-items:center; justify-content:center; z-index:14;">
+    <div style="background:#160f23; color:#f5f3ff; max-width:34rem; max-height:92vh; overflow:auto; margin:1rem; padding:1.1rem 1.3rem; border-radius:18px; box-shadow:0 20px 60px rgba(0,0,0,.6); text-align:center;">
+      <h2 id="finTitle" style="margin:.2rem 0; color:#fca5a5;"></h2>
+      <canvas id="finCanvas" width="480" height="240" style="width:100%; height:auto; border-radius:12px; background:#0a0614; display:block; margin:.4rem 0;"></canvas>
+      <p id="finCaption" style="font-style:italic; color:#ddd6fe; margin:.3rem 0;"></p>
+      <div id="finLines" style="line-height:1.6; font-size:.98rem; text-align:left; margin:.4rem 0;"></div>
+      <button id="finClose" class="active">Zum Fest 🎉</button>
+    </div>
+  </div>
+
+  <!-- ITEM-057 Version A: one-time, dismissible pre-game instruction overlay
+       (phone-landscape only). Its body text is filled from the inline #hint (same
+       exact German copy) so nothing is duplicated in markup. Styled with the shared
+       CSS variables to match the card/recap modals and stay high-contrast safe. It
+       never blocks the real "Einsatz starten" control — after dismissing it the
+       player starts normally. Dismiss by the button, the backdrop, or Esc. -->
+  <div id="pregame" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:15;">
+    <div style="background:var(--panel); color:var(--ink); max-width:30rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <h2 style="margin:.2rem 0; text-align:center;">So funktioniert's 🎮</h2>
+      <p id="pregameText" style="line-height:1.5; margin:.5rem 0 1rem;"></p>
+      <div style="text-align:center;"><button id="pregameOk" class="active">Los geht's! ▶</button></div>
+    </div>
+  </div>
+
+  <script>//__FD_GAME_JS__</script>
+</body>
+</html>

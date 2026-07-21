@@ -9,9 +9,6 @@ __pycache__/
 .venv/
 venv/
 
-# Scratch file the check runner uses to syntax-check the browser code
-.game.check.js
-
 # Scratch transfer / snapshot folders the cloud session uses to move files safely
 # (so they can never be committed by accident, even with `git add -A`).
 _to_delete/

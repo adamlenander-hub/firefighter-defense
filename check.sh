@@ -18,16 +18,9 @@ python3 firefighter_defense.py --simulate
 
 echo "4/5  Checking the on-screen game code (the part that runs in the browser)"
 if command -v node >/dev/null 2>&1; then
-  python3 - <<'PY'
-import re
-src = open("firefighter_defense.py", encoding="utf-8").read()
-m = re.search(r'GAME_HTML\s*=\s*[a-z]*"""(.*?)"""', src, re.S)
-html = m.group(1) if m else ""
-js = "".join(re.findall(r"<script>(.*?)</script>", html, re.S))
-open(".game.check.js", "w", encoding="utf-8").write(js)
-PY
-  node --check .game.check.js
-  rm -f .game.check.js
+  # The browser code now lives in its own file (extracted from the Python), so it
+  # can be syntax-checked directly — no need to pull it out of a Python string.
+  node --check static/game.js
   echo "     OK"
 else
   echo "     SKIPPED — Node isn't installed, so the browser code can't be syntax-checked here."
