@@ -2056,14 +2056,27 @@ GAME_HTML = """<!DOCTYPE html>
         ctx.strokeStyle=plank; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(m.x-m.nx*hw,m.y-m.ny*hw); ctx.lineTo(m.x+m.nx*hw,m.y+m.ny*hw); ctx.stroke(); });
       ctx.lineCap='round';
     }
-    function drawPathBooks(wp){                  // mission 2 — a trail of books
+    function drawPathBooks(wp){                  // mission 2 — flat books lying scattered along the trail (ITEM-059)
       var hc=contrastEnabled; drawRibbon(wp, hc?'#2b3546':'#d9c9a8');
-      var spines=hc?['#7cb0ff','#ffc247','#ff86d3','#4fe6cf']:['#2f6fed','#e4572e','#8b5cf6','#14b8a6'];
-      pathMotifs(wp,30).forEach(function(m,i){ ctx.save(); ctx.translate(m.x,m.y); ctx.rotate(Math.atan2(m.ny,m.nx));
-        var col=spines[i%spines.length];
-        ctx.fillStyle=shade(col,-0.25); rr(ctx,-14,-6,28,12,2); ctx.fill();
-        ctx.fillStyle=col; rr(ctx,-14,-6,28,7,2); ctx.fill();
-        ctx.fillStyle=hc?'#e5e7eb':'#fff'; ctx.fillRect(-12,-1,24,3); ctx.restore(); });
+      var covers=hc?['#7cb0ff','#ffc247','#ff86d3','#4fe6cf','#c4b5fd']:['#2f6fed','#e4572e','#8b5cf6','#14b8a6','#d6a409'];
+      // Stable pseudo-random per book index (NOT per frame) so the scatter holds still.
+      function h(n){ var x=Math.sin(n*12.9898)*43758.5453; return x-Math.floor(x); }
+      pathMotifs(wp,22).forEach(function(m,i){
+        var col=covers[i%covers.length];
+        var off=(h(i*2+1)-0.5)*20, along=(h(i*2+7)-0.5)*14;   // scatter across + a little along the lane
+        var ang=(h(i*3+2)-0.5)*Math.PI;                        // any angle — haphazard, not aligned to the lane
+        var bw=17+h(i+5)*7, bh=12+h(i+9)*5;                    // varied book size
+        ctx.save();
+        ctx.translate(m.x+m.nx*off+m.ny*along, m.y+m.ny*off-m.nx*along);
+        ctx.rotate(ang);
+        ctx.fillStyle=shade(col,-0.32); rr(ctx,-bw/2-1.5,-bh/2+2,bw,bh,2.5); ctx.fill();   // underside/shadow — books lie flat, face-up
+        ctx.fillStyle=col; rr(ctx,-bw/2,-bh/2,bw,bh,2.5); ctx.fill();                        // cover
+        ctx.fillStyle=shade(col,-0.4); ctx.fillRect(-bw/2,-bh/2,3.5,bh);                     // spine down the left edge
+        ctx.fillStyle=hc?'#e5e7eb':'#fdfaf0'; ctx.fillRect(bw/2-3,-bh/2+2,2.5,bh-4);         // page block on the right edge
+        ctx.strokeStyle=hc?'rgba(255,255,255,.55)':'rgba(255,255,255,.8)'; ctx.lineWidth=1.4; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(-bw/2+6,-bh*0.12); ctx.lineTo(bw/2-6,-bh*0.12); ctx.moveTo(-bw/2+6,bh*0.16); ctx.lineTo(bw/2-8,bh*0.16); ctx.stroke();  // title lines
+        ctx.restore();
+      });
     }
     function drawPathGravel(wp){                 // mission 3 — park gravel / earth trail
       var hc=contrastEnabled; drawRibbon(wp, hc?'#333e30':'#c9b48f');
