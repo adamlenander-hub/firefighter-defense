@@ -1371,6 +1371,10 @@
       var remain=s.until-now, fade = remain<250 ? Math.max(0, remain/250) : 1;
       if (fade<=0) return;
       ctx.save();
+      // ITEM-062: a dark soft halo behind every spray so the light streams read over
+      // ANY background (bright half-timbered / library / park), not just dark ones.
+      // Auto-reset by the ctx.restore() below; kept modest so many particles stay cheap.
+      ctx.shadowColor='rgba(15,23,42,0.9)'; ctx.shadowBlur=7;
       switch (s.tool){
         case 'water':   drawWaterSpray(s,ux,uy,px,py,dist,now,fade); break;
         case 'foam':    drawFoamSpray(s,ux,uy,px,py,dist,now,fade); break;
@@ -1386,70 +1390,70 @@
     }
     // water: a thin, taut, straight jet — a clean narrow stream with flowing dashes.
     function drawWaterSpray(s,ux,uy,px,py,dist,now,fade){
-      ctx.strokeStyle='rgba(255,255,255,'+(0.9*fade)+')'; ctx.lineWidth=2.2;
+      ctx.strokeStyle='rgba(255,255,255,'+(1.0*fade)+')'; ctx.lineWidth=4.8;
       ctx.setLineDash([10,6]); ctx.lineDashOffset=-((now/18)%16);
       ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
       ctx.setLineDash([]);
     }
     // foam: a thicker band of soft round blobs travelling along the line — gloopy.
     function drawFoamSpray(s,ux,uy,px,py,dist,now,fade){
-      var n=5;
+      var n=7;
       for (var i=0;i<n;i++){
         var t=((now/450)+i/n)%1;
         var wig=Math.sin(t*Math.PI*2+i)*4;
         var bx=s.x1+ux*dist*t+px*wig, by=s.y1+uy*dist*t+py*wig;
-        var r=5+3*Math.sin(t*Math.PI);
-        ctx.fillStyle='rgba(255,255,255,'+(0.6*fade)+')';
+        var r=8+4*Math.sin(t*Math.PI);
+        ctx.fillStyle='rgba(255,255,255,'+(0.97*fade)+')';
         ctx.beginPath(); ctx.arc(bx,by,r,0,Math.PI*2); ctx.fill();
-        ctx.strokeStyle='rgba(30,41,59,'+(0.35*fade)+')'; ctx.lineWidth=1; ctx.stroke();
+        ctx.strokeStyle='rgba(30,41,59,'+(0.65*fade)+')'; ctx.lineWidth=1.7; ctx.stroke();
       }
     }
     // co2: little/no travelling line — a soft cloud that blooms mainly at the fire end.
     function drawCo2Spray(s,ux,uy,px,py,dist,now,fade){
-      ctx.strokeStyle='rgba(255,255,255,'+(0.22*fade)+')'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x1+ux*18, s.y1+uy*18); ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,255,'+(0.62*fade)+')'; ctx.lineWidth=2.8;
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x1+ux*22, s.y1+uy*22); ctx.stroke();
       var pulse=(now/500)%1;
-      for (var i=0;i<3;i++){
-        var tt=(pulse+i/3)%1, r=6+tt*16, a=(1-tt)*0.5*fade;
+      for (var i=0;i<4;i++){
+        var tt=(pulse+i/4)%1, r=9+tt*24, a=(1-tt)*0.98*fade;
         ctx.fillStyle='rgba(255,255,255,'+a+')';
         ctx.beginPath(); ctx.arc(s.x2,s.y2,r,0,Math.PI*2); ctx.fill();
       }
     }
     // powder: a wide fan/cone of small round dots spreading from tower toward fire.
     function drawPowderSpray(s,ux,uy,px,py,dist,now,fade){
-      var n=9, fan=0.55;
+      var n=12, fan=0.6;
       for (var i=0;i<n;i++){
         var ang=(i/(n-1)-0.5)*fan;
         var rux=ux*Math.cos(ang)-uy*Math.sin(ang), ruy=ux*Math.sin(ang)+uy*Math.cos(ang);
         var t=((now/240)+i*0.11)%1;
         var cx=s.x1+rux*dist*t, cy=s.y1+ruy*dist*t;
-        var a=(0.15+0.55*(1-t))*fade;
+        var a=(0.55+0.55*(1-t))*fade;
         ctx.fillStyle='rgba(255,255,255,'+a+')';
-        ctx.beginPath(); ctx.arc(cx,cy,2.6,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx,cy,4.3,0,Math.PI*2); ctx.fill();
       }
     }
     // wetchem: a narrower cone of many fine short dashes — a finer, narrower mist than powder.
     function drawWetchemSpray(s,ux,uy,px,py,dist,now,fade){
-      var n=16, fan=0.22;
+      var n=20, fan=0.24;
       for (var i=0;i<n;i++){
         var ang=(i/(n-1)-0.5)*fan;
         var rux=ux*Math.cos(ang)-uy*Math.sin(ang), ruy=ux*Math.sin(ang)+uy*Math.cos(ang);
         var t=((now/200)+i*0.061)%1;
-        var cx=s.x1+rux*dist*t, cy=s.y1+ruy*dist*t, len=4;
-        ctx.strokeStyle='rgba(255,255,255,'+(0.5*(1-t*0.5)*fade)+')'; ctx.lineWidth=1;
+        var cx=s.x1+rux*dist*t, cy=s.y1+ruy*dist*t, len=6.5;
+        ctx.strokeStyle='rgba(255,255,255,'+(0.94*(1-t*0.35)*fade)+')'; ctx.lineWidth=2.4;
         ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+rux*len, cy+ruy*len); ctx.stroke();
       }
     }
     // metal: a narrow, dense stream of small square/angular particles, poured/arcing —
     // square shape (vs. powder's round dots) plus a gentle gravity dip on the way.
     function drawMetalSpray(s,ux,uy,px,py,dist,now,fade){
-      var n=9;
+      var n=11;
       for (var i=0;i<n;i++){
         var t=((now/230)+i/n)%1;
-        var bx=s.x1+ux*dist*t, by=s.y1+uy*dist*t+Math.sin(t*Math.PI)*8, sz=3.4;
-        ctx.fillStyle='rgba(255,255,255,'+(0.75*fade)+')';
+        var bx=s.x1+ux*dist*t, by=s.y1+uy*dist*t+Math.sin(t*Math.PI)*8, sz=5.6;
+        ctx.fillStyle='rgba(255,255,255,'+(0.99*fade)+')';
         ctx.fillRect(bx-sz/2, by-sz/2, sz, sz);
-        ctx.strokeStyle='rgba(30,41,59,'+(0.5*fade)+')'; ctx.lineWidth=0.75;
+        ctx.strokeStyle='rgba(30,41,59,'+(0.7*fade)+')'; ctx.lineWidth=1.2;
         ctx.strokeRect(bx-sz/2, by-sz/2, sz, sz);
       }
     }
