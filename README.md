@@ -10,9 +10,11 @@ Built as the 150-year anniversary game for the **Freiwillige Feuerwehr Königste
 Taunus**, narrated by **Anton**, a water-shy castle ghost. The game is in German, with
 all player-facing text kept as data so an English version can be added later.
 
-It's a single self-contained Python app: one file plus a couple of standard web
-libraries. It builds its own database of fire facts on startup, so there's nothing to
-set up and nothing that needs to survive a restart.
+It's a small, self-contained Python app — a handful of themed modules (config, content,
+database, levels, play engine, web layer, and checks) with the browser front-end in
+`templates/` and `static/`, plus a couple of standard web libraries. No build step. It
+builds its own database of fire facts on startup, so there's nothing to set up and
+nothing that needs to survive a restart.
 
 ## Play it locally
 

@@ -32,13 +32,13 @@ python3 firefighter_defense.py          # run the game → http://localhost:3000
 
 The five checks in `check.sh`, each runnable on its own:
 
-1. `python3 -m py_compile firefighter_defense.py` — Python parses.
+1. `python3 -m py_compile firefighter_defense.py` — the entry point parses (steps 2-5 import the sibling modules, so those parse too).
 2. `python3 firefighter_defense.py --check-content` — fire facts match the reference (headless, no framework).
 3. `python3 firefighter_defense.py --simulate` — the first level is winnable **only** by safe, correct play.
-4. Node syntax-check of the embedded browser JS (skipped if Node absent).
-5. `pytest -q` — the full test suite (`test_app.py`).
+4. `node --check static/game.js` — the browser code parses (skipped if Node absent).
+5. `pytest -q` — the full test suite (the six `test_*.py` files).
 
-Run a single test: `pytest test_app.py::test_name -q` (or `-k pattern`).
+Run a single test: `pytest test_engine.py::test_name -q` (or `pytest -k pattern` to match by name across all files).
 
 The `--check-content` and `--simulate` modes exit without starting a server or importing FastAPI — this
 is what CI and the pre-commit hook rely on, and what lets logic be tested in a framework-free sandbox.
@@ -53,32 +53,47 @@ is what CI and the pre-commit hook rely on, and what lets logic be tested in a f
 
 ## Architecture
 
-**The entire game is one file: `firefighter_defense.py`** (~3,700 lines). Understanding its layout matters
-more than anything else here:
+The game is a **layered set of small Python modules** plus a separate browser front-end.
+`firefighter_defense.py` is now a thin **entry point**: it re-exports every module
+(`from config import *`, `from content import *`, ...) so `import firefighter_defense` still
+exposes the same names the tests and CLI use, and it holds the `__main__` block (run the
+server, `--check-content`, `--simulate`). Modules, in dependency order:
 
-- **~60% of the file is one giant embedded string, `GAME_HTML`** (roughly lines 1477–3640) — the whole
-  browser front-end (HTML + CSS + JavaScript) pasted into Python. The Python "logic" is actually small.
-- **Python logic** is organized by clearly-commented section banners (`# --- ... ---`):
-  - **Config** (env-overridable: `HOST`, `PORT`, `DATABASE_PATH`, `SCHEMA_VERSION`, `CONTENT_VERSION`).
-  - **Fire facts** — `FIRE_CLASSES`, tool/cost tables. The machine-readable encoding of the safety reference.
-  - **Text-as-data** — `L(de, en)` helper and the `anton_*` / `mission_lines_de` / `finale_de` narration
-    functions. All player-facing strings pass through this so a language switch stays possible.
-  - **Database** — `init_db`, `build_content`, `load_matrix`. SQLite, **rebuilt from source on every start**
-    (see below). `check_content` compares the built content against the reference.
-  - **Levels** — `LEVELS` data (map, path waypoints, build spots, waves) plus geometry helpers.
-  - **`GameState`** (~line 844) — the single core game object holding all play/simulation logic.
-  - **Checks** — `check_levels`, `check_narration`, and `behaviour_check` (the `--simulate` safe-play proof).
-  - **Web app** — `render_game_html`, then `build_app()` which imports FastAPI *lazily* and defines the
-    routes: `/`, `/health`, `/api/levels`, `/api/level/{i}`, `/api/classes`, `/api/tools`, `/api/anton`,
-    `/api/matrix`.
+- **`config.py`** — all settings, each overridable by environment variable (`HOST`, `PORT`,
+  `DATABASE_PATH`, `SCHEMA_VERSION`, `CONTENT_VERSION`). Depends on nothing.
+- **`content.py`** — the fire facts and every line Anton speaks, as data (the machine-readable
+  encoding of `../docs/FIRE_SAFETY_REFERENCE.md`, plus the `L(de, en)` text helper). Pure data;
+  the rest of the app reads from here.
+- **`db.py`** — the SQLite database: `init_db`, `build_content`, `load_matrix`. Rebuilt from
+  `content.py` on every start.
+- **`levels.py`** — `LEVELS` data (map, path waypoints, build spots, waves), the play-tuning
+  constants, and the geometry/level helpers.
+- **`engine.py`** — `GameState`, the framework-free, deterministic play engine. Runs and is
+  tested without a browser.
+- **`web.py`** — the FastAPI app: page assembly (`render_game_html`), the health check, and
+  `build_app()`, which imports FastAPI **lazily** and defines the routes `/`, `/health`,
+  `/api/levels`, `/api/level/{i}`, `/api/classes`, `/api/tools`, `/api/anton`, `/api/matrix`.
+- **`checks.py`** — the "proof not claims" self-checks: `check_content`, `check_levels`,
+  `check_narration`, and `behaviour_check` (the `--simulate` safe-play proof). Framework-free,
+  so they run in CI and the pre-commit hook.
 
-**Data flow of the facts:** `FIRE_CLASSES` / content tables → `build_content` writes SQLite → `/api/matrix`
-serves the class×tool→outcome grid → the browser resolves every shot against that grid. **The browser never
+The browser front-end lives in its own files, served by the app rather than pasted into Python:
+**`templates/index.html`** (the page), **`static/game.js`** (~1,850 lines of browser logic), and
+**`static/styles.css`** (the look).
+
+Tests mirror the modules — **`test_content.py`, `test_db.py`, `test_levels.py`, `test_engine.py`,
+`test_web.py`, `test_checks.py`** — with shared builders/play-drivers in **`helpers.py`** and the
+pytest setup (a FastAPI stand-in for offline runs) in **`conftest.py`**. Every test does
+`import firefighter_defense as g` + `from helpers import *`. `sim_balance.py` is a non-shipped
+tuning aid.
+
+**Data flow of the facts:** `content.py` -> `build_content` writes SQLite -> `/api/matrix` serves the
+class×tool->outcome grid -> the browser resolves every shot against that grid. **The browser never
 hard-codes fire facts** — it asks the API, which reads the DB, which was built from the reference.
 
-**The database is disposable.** It builds itself on startup (`_lifespan` / `init_db`) from the app's own
-content, so free hosting that wipes disk on restart is fine and `*.db` is gitignored. Never hand-edit the
-`.db` file; edit the source content and let it rebuild.
+**The database is disposable.** It builds itself on startup (`_lifespan` / `init_db`) from
+`content.py`, so free hosting that wipes disk on restart is fine and `*.db` is gitignored. Never
+hand-edit the `.db` file; edit `content.py` (and the reference) and let it rebuild.
 
 ## The rules that make this project what it is
 
@@ -97,12 +112,13 @@ Work is tracked as numbered items in `../backlog/` (`board.md` is the single sou
 each item is in). Code comments frequently reference item numbers (e.g. `ITEM-016`, `ITEM-040`) explaining
 *why* a mechanic exists. Every shipped item gets a retrospective logged in `../process-notes.md`.
 
-## Known refactor direction
+## Refactor history
 
-`firefighter_defense.py` is large mostly because the front-end is embedded as a string. The planned (not yet
-done) refactor is to extract `GAME_HTML` into `templates/index.html` + `static/game.js` + `static/styles.css`,
-then split the Python logic and tests into themed files — one small step at a time, on a branch, game running
-and checks passing after each. See `../REFACTOR_PLAN_and_CLAUDE_CODE_GUIDE.md`.
+The layered layout above is the result of a refactor completed 2026-07-21 (git `890ba9a` ->
+`cf5f4c6`): the embedded `GAME_HTML` string was extracted into `templates/` + `static/`, then the
+Python logic and the old `test_app.py` were split into the themed modules and per-module test files
+listed above — one small step at a time, on a branch, with the game running and every check passing
+after each step. `../REFACTOR_PLAN_and_CLAUDE_CODE_GUIDE.md` is the plan that was followed (kept for reference).
 
 ## Sandbox note
 
