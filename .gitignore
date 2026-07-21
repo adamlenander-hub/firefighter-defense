@@ -9,6 +9,9 @@ __pycache__/
 .venv/
 venv/
 
+# macOS Finder metadata
+.DS_Store
+
 # Scratch transfer / snapshot folders the cloud session uses to move files safely
 # (so they can never be committed by accident, even with `git add -A`).
 _to_delete/
