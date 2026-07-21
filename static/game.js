@@ -232,7 +232,11 @@
     var paused = false;     // true while an explanation card is up
     var feedbackUntil = 0;
     var selectedTool = null;
-    var sprays = [];        // brief tower->fire lines to draw: {x1,y1,x2,y2,until}
+    // ITEM-062: one live spray record per tower (keyed by tower spot), not a growing
+    // array of one-off blips — {x1,y1,x2,y2,until,tool}. Each shot refreshes the
+    // record for its tower (new target + until pushed ~1s out), so a firing tower
+    // shows one continuous animated stream that fades ~1s after its last shot.
+    var sprays = {};
     var game = null;        // running game state, or null before start
     var last = 0;
     // --- Anton-as-narrator + campaign state (ITEM-026 / ITEM-027) ---
@@ -1152,7 +1156,10 @@
         if (!target) continue;
         tw.cooldown = TOWER_COOLDOWN;
         var tp=firePos(target);
-        sprays.push({x1:tw.spot[0], y1:tw.spot[1], x2:tp[0], y2:tp[1], until:performance.now()+120});
+        // ITEM-062: replace (not push) this tower's spray record — one continuous
+        // stream per tower, refreshed on every shot, fading ~1s after the last one.
+        sprays[tw.spot.join(',')] = {x1:tw.spot[0], y1:tw.spot[1], x2:tp[0], y2:tp[1],
+                                      until:performance.now()+1000, tool:tw.tool};
         var thaz = HAZARD_CLASS_OF_IN(g, target.cls);
         if (thaz && g.supplies[thaz]==='on'){
           // supply still on: spraying does nothing — cut the supply first. ITEM-040:
@@ -1231,7 +1238,7 @@
       if (!game) return;
       if (game.status==='idle'){ game.status='playing'; last=performance.now(); }
       else if (game.status==='won' || game.status==='lost'){
-        game=newGame(level); sprays=[]; hintShown=false; seen={}; prevStatus='idle';
+        game=newGame(level); sprays={}; hintShown=false; seen={}; prevStatus='idle';
       }
       updateControls(); updateBudget();
     }
@@ -1340,13 +1347,111 @@
       var fillH = Math.max(0,(gh-2)*frac);
       ctx.fillRect(gx+1, gy+1+((gh-2)-fillH), gw-2, fillH);
     }
+    // ITEM-062: `sprays` holds one live record per tower (keyed by spot in advance()).
+    // A record's `until` keeps getting pushed ~1s out on every shot while a tower
+    // keeps firing (TOWER_COOLDOWN=0.7s < the 1s hold), so a continuously firing
+    // tower reads as one unbroken animated stream that only fades in the ~250ms
+    // after its last shot. Each tool gets its own shape+motion (not just colour,
+    // so it still reads under contrastEnabled) — see the per-tool draw* helpers.
     function drawSprays(){
-      var now=performance.now(), keep=[];
-      for (var i=0;i<sprays.length;i++){ var s=sprays[i]; if (s.until<now) continue; keep.push(s);
-        ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=3;
-        ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+      var now=performance.now(), keys=Object.keys(sprays), keep={};
+      for (var k=0;k<keys.length;k++){
+        var key=keys[k], s=sprays[key];
+        if (s.until<now) continue;             // fully faded — drop the record
+        keep[key]=s;
+        drawOneSpray(s, now);
       }
       sprays=keep;
+    }
+    function drawOneSpray(s, now){
+      var dx=s.x2-s.x1, dy=s.y2-s.y1, dist=Math.hypot(dx,dy)||1;
+      var ux=dx/dist, uy=dy/dist, px=-uy, py=ux;
+      // last ~250ms before `until`: ramp alpha down to 0 so the stream fades out
+      // rather than snapping off.
+      var remain=s.until-now, fade = remain<250 ? Math.max(0, remain/250) : 1;
+      if (fade<=0) return;
+      ctx.save();
+      switch (s.tool){
+        case 'water':   drawWaterSpray(s,ux,uy,px,py,dist,now,fade); break;
+        case 'foam':    drawFoamSpray(s,ux,uy,px,py,dist,now,fade); break;
+        case 'co2':     drawCo2Spray(s,ux,uy,px,py,dist,now,fade); break;
+        case 'powder':  drawPowderSpray(s,ux,uy,px,py,dist,now,fade); break;
+        case 'wetchem': drawWetchemSpray(s,ux,uy,px,py,dist,now,fade); break;
+        case 'metal':   drawMetalSpray(s,ux,uy,px,py,dist,now,fade); break;
+        default:        // unknown tool id — fall back to the old plain blip so nothing throws
+          ctx.strokeStyle='rgba(255,255,255,'+(0.85*fade)+')'; ctx.lineWidth=3;
+          ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // water: a thin, taut, straight jet — a clean narrow stream with flowing dashes.
+    function drawWaterSpray(s,ux,uy,px,py,dist,now,fade){
+      ctx.strokeStyle='rgba(255,255,255,'+(0.9*fade)+')'; ctx.lineWidth=2.2;
+      ctx.setLineDash([10,6]); ctx.lineDashOffset=-((now/18)%16);
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // foam: a thicker band of soft round blobs travelling along the line — gloopy.
+    function drawFoamSpray(s,ux,uy,px,py,dist,now,fade){
+      var n=5;
+      for (var i=0;i<n;i++){
+        var t=((now/450)+i/n)%1;
+        var wig=Math.sin(t*Math.PI*2+i)*4;
+        var bx=s.x1+ux*dist*t+px*wig, by=s.y1+uy*dist*t+py*wig;
+        var r=5+3*Math.sin(t*Math.PI);
+        ctx.fillStyle='rgba(255,255,255,'+(0.6*fade)+')';
+        ctx.beginPath(); ctx.arc(bx,by,r,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='rgba(30,41,59,'+(0.35*fade)+')'; ctx.lineWidth=1; ctx.stroke();
+      }
+    }
+    // co2: little/no travelling line — a soft cloud that blooms mainly at the fire end.
+    function drawCo2Spray(s,ux,uy,px,py,dist,now,fade){
+      ctx.strokeStyle='rgba(255,255,255,'+(0.22*fade)+')'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x1+ux*18, s.y1+uy*18); ctx.stroke();
+      var pulse=(now/500)%1;
+      for (var i=0;i<3;i++){
+        var tt=(pulse+i/3)%1, r=6+tt*16, a=(1-tt)*0.5*fade;
+        ctx.fillStyle='rgba(255,255,255,'+a+')';
+        ctx.beginPath(); ctx.arc(s.x2,s.y2,r,0,Math.PI*2); ctx.fill();
+      }
+    }
+    // powder: a wide fan/cone of small round dots spreading from tower toward fire.
+    function drawPowderSpray(s,ux,uy,px,py,dist,now,fade){
+      var n=9, fan=0.55;
+      for (var i=0;i<n;i++){
+        var ang=(i/(n-1)-0.5)*fan;
+        var rux=ux*Math.cos(ang)-uy*Math.sin(ang), ruy=ux*Math.sin(ang)+uy*Math.cos(ang);
+        var t=((now/240)+i*0.11)%1;
+        var cx=s.x1+rux*dist*t, cy=s.y1+ruy*dist*t;
+        var a=(0.15+0.55*(1-t))*fade;
+        ctx.fillStyle='rgba(255,255,255,'+a+')';
+        ctx.beginPath(); ctx.arc(cx,cy,2.6,0,Math.PI*2); ctx.fill();
+      }
+    }
+    // wetchem: a narrower cone of many fine short dashes — a finer, narrower mist than powder.
+    function drawWetchemSpray(s,ux,uy,px,py,dist,now,fade){
+      var n=16, fan=0.22;
+      for (var i=0;i<n;i++){
+        var ang=(i/(n-1)-0.5)*fan;
+        var rux=ux*Math.cos(ang)-uy*Math.sin(ang), ruy=ux*Math.sin(ang)+uy*Math.cos(ang);
+        var t=((now/200)+i*0.061)%1;
+        var cx=s.x1+rux*dist*t, cy=s.y1+ruy*dist*t, len=4;
+        ctx.strokeStyle='rgba(255,255,255,'+(0.5*(1-t*0.5)*fade)+')'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+rux*len, cy+ruy*len); ctx.stroke();
+      }
+    }
+    // metal: a narrow, dense stream of small square/angular particles, poured/arcing —
+    // square shape (vs. powder's round dots) plus a gentle gravity dip on the way.
+    function drawMetalSpray(s,ux,uy,px,py,dist,now,fade){
+      var n=9;
+      for (var i=0;i<n;i++){
+        var t=((now/230)+i/n)%1;
+        var bx=s.x1+ux*dist*t, by=s.y1+uy*dist*t+Math.sin(t*Math.PI)*8, sz=3.4;
+        ctx.fillStyle='rgba(255,255,255,'+(0.75*fade)+')';
+        ctx.fillRect(bx-sz/2, by-sz/2, sz, sz);
+        ctx.strokeStyle='rgba(30,41,59,'+(0.5*fade)+')'; ctx.lineWidth=0.75;
+        ctx.strokeRect(bx-sz/2, by-sz/2, sz, sz);
+      }
     }
 
     function setLives(n){ var el=document.getElementById('lives'); if (el) el.textContent=''; }   // ITEM-058: on-screen lives counter removed — the house condition is the life gauge
@@ -1674,7 +1779,7 @@
     function loadLevel(i){
       fetch('/api/level/'+i+apiLang()).then(function(r){return r.json();}).then(function(data){
         if (data.error) return;
-        level = data; game = newGame(level); sprays = []; prevStatus='idle';
+        level = data; game = newGame(level); sprays = {}; prevStatus='idle';
         seen = {}; paused = false; hintShown = false; currentIndex = i; keyIndex = -1;
         antonLines = data.anton || {};
         missionKey = data.key; missionNo = data.mission; isCampaign = !!data.campaign;
