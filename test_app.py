@@ -1326,6 +1326,15 @@ def test_landscape_modals_fit_screen_with_reachable_button():
     assert "overflow-y: auto" in block
 
 
+def test_intro_moves_icon_and_attribution_to_bottom_of_text():
+    html = g.render_game_html()
+    # the mission intro keeps the top clear (no icon) and hides the static attribution,
+    # appending the ghost + name to the bottom of the scrollable info text instead.
+    assert 'id="cardAttrib"' in html
+    assert "document.getElementById('cardIcon').textContent = ''" in html
+    assert "— Anton, der Burggeist" in html
+
+
 def test_landscape_board_makes_room_for_the_strip():
     html = g.render_game_html()
     block = _landscape_block(html)

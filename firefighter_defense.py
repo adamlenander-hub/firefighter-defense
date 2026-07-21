@@ -1652,6 +1652,8 @@ GAME_HTML = """<!DOCTYPE html>
       #cardText, #pregameText, #libBody, #recapClasses {
         flex: 1 1 auto; min-height: 0; overflow-y: auto;
       }
+      /* a little more reading room for the modal text on a short landscape screen */
+      #cardTitle { font-size: 1.05rem; }
     }
   </style>
 </head>
@@ -1701,7 +1703,7 @@ GAME_HTML = """<!DOCTYPE html>
       <div id="cardIcon" style="font-size:2.6rem;"></div>
       <h3 id="cardTitle" style="margin:.3rem 0;"></h3>
       <p id="cardText" style="line-height:1.5;"></p>
-      <p style="font-size:.8rem; color:var(--muted); margin:.6rem 0;">— Anton, der Burggeist 👻</p>
+      <p id="cardAttrib" style="font-size:.8rem; color:var(--muted); margin:.6rem 0;">— Anton, der Burggeist 👻</p>
       <button id="cardOk">Verstanden</button>
     </div>
   </div>
@@ -3182,6 +3184,9 @@ GAME_HTML = """<!DOCTYPE html>
     }
     function showCard(cls){
       var c=classMap[cls]||{}; paused=true;
+      // restore the top icon + static attribution for the "meet the fire" card
+      // (the mission intro hides them and moves them to the bottom of its text).
+      var attrib=document.getElementById('cardAttrib'); if (attrib) attrib.style.display='';
       document.getElementById('cardIcon').textContent = c.icon || '🔥';
       document.getElementById('cardTitle').textContent = (c.name_de||'') + (c.letter ? (' ('+c.letter+')') : '');
       document.getElementById('cardText').textContent = c.card_de || '';
@@ -3192,7 +3197,11 @@ GAME_HTML = """<!DOCTYPE html>
     // card modal + toggle, so it can be turned off and doesn't stack extra pauses.
     function showMissionIntro(){
       if (!cardsEnabled || !isCampaign || !antonLines || !antonLines.open) return;
-      document.getElementById('cardIcon').textContent = '👻';
+      // ITEM-057: keep the top clear so the info text is easy to read on a short
+      // landscape screen — no top icon, and the static attribution line is hidden
+      // (its ghost + name are appended to the BOTTOM of the text below instead).
+      document.getElementById('cardIcon').textContent = '';
+      var attrib=document.getElementById('cardAttrib'); if (attrib) attrib.style.display='none';
       document.getElementById('cardTitle').textContent =
         (missionNo ? ('Einsatz ' + missionNo + ' · ') : '') + (level ? level.name : '');
       var el=document.getElementById('cardText'); el.textContent='';
@@ -3202,6 +3211,16 @@ GAME_HTML = """<!DOCTYPE html>
         if (idx>0){ el.appendChild(document.createElement('br')); el.appendChild(document.createElement('br')); }
         el.appendChild(document.createTextNode(p));
       });
+      // The ghost + "— Anton, der Burggeist" now sit at the bottom of the info text,
+      // inside the scrollable region, so the reader reaches them after the anecdote.
+      el.appendChild(document.createElement('br'));
+      el.appendChild(document.createElement('br'));
+      var g=document.createElement('span'); g.textContent='👻';
+      g.style.fontSize='1.8rem'; g.style.display='block'; g.style.marginTop='.2rem';
+      el.appendChild(g);
+      var a=document.createElement('span'); a.textContent='— Anton, der Burggeist';
+      a.style.fontSize='.8rem'; a.style.color='var(--muted)'; a.style.display='block';
+      el.appendChild(a);
       document.getElementById('card').style.display='flex';
       paused=true;
     }
