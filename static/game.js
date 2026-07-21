@@ -21,13 +21,189 @@
     // ITEM-034: caps how many fires can ever be alive at once, so a chain of water
     // splitting a liquid/cooking-oil fire in two can never make a level unwinnable.
     var MAX_ACTIVE_FIRES = 14;
+
+    // --- German→English in-game switch (i18n) ---------------------------------
+    // The game is German-first; every player-visible German string that is hard-coded
+    // in the browser (chrome, buttons, recap, library, tool-info, status/footer) lives
+    // here as a de/en pair, read through tr(key). Content that comes from the server
+    // (fire facts, Anton's lines, level names) is switched by re-fetching with ?lang=.
+    // `lang` starts at 'de'; loadLang() below sets it from localStorage 'fd_lang'
+    // (falling back to the served <html lang>). Named tr (not t) to avoid colliding
+    // with the many local `t` variables in this file.
+    var lang = 'de';
+    var UI_STRINGS = {
+      de: {
+        subtitle: '🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre',
+        place_loading: 'Einsatz wird geladen …',
+        menu_mission: '🎯 Mission ▾',
+        btn_start: 'Einsatz starten',
+        btn_running: 'Läuft …',
+        btn_restart: 'Neu starten',
+        lbl_contrast: 'Große Schrift / Hoher Kontrast',
+        ui_sound: 'Ton',
+        lib_btn: 'Antons Wissen',
+        hint: 'Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Löscher leeren sich (Anzeige am Turm) und müssen ersetzt werden. Falsch gebaut? Ohne gewählten Löscher auf den Turm tippen, um ihn abzubauen (keine Rückerstattung). Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Rücktaste/Entf baut ab, Leertaste startet.',
+        legend_start: 'Start',
+        legend_path: 'Weg zum Gebäude',
+        legend_spot: 'Bauplatz für Löscher',
+        legend_building: 'Gebäude',
+        card_attrib: '— Anton, der Burggeist 👻',
+        card_ok: 'Verstanden',
+        lib_title: 'Antons Wissen 👻',
+        lib_subtitle: 'Welcher Löscher passt zu welchem Feuer?',
+        close: 'Schließen',
+        vig_close: 'Weiter',
+        fin_close: 'Zum Fest 🎉',
+        pregame_title: 'So funktioniert\'s 🎮',
+        pregame_ok: 'Los geht\'s! ▶',
+        recap_won: 'Einsatz geschafft! 🎉',
+        recap_lost: 'Einsatz gescheitert',
+        recap_score: 'Wissenswertung: ',
+        recap_of: ' von ',
+        recap_ok: ' Feuern richtig gelöscht · ',
+        recap_through: ' durchgekommen · ',
+        recap_mistakes: ' Fehlversuche',
+        recap_correct: 'Richtig: ',
+        recap_these_fires: 'Diese Feuer kamen vor:',
+        recap_loss_anton: 'Kein Grund zu hadern — beim nächsten Mal schaffen wir das zusammen.',
+        recap_next: 'Nächster Einsatz ▶',
+        lib_correct: '✓ Richtig: ',
+        lib_dangerous: '⚠️ Gefährlich: ',
+        lib_loading: 'Wird geladen …',
+        tower_removed: 'Löscher abgebaut — keine Rückerstattung.',
+        gas_off: 'Gaszufuhr abgesperrt — gut!',
+        power_off: 'Strom abgeschaltet — gut!',
+        info_waves: ' Wellen — Löscher bauen, dann starten.',
+        info_won: 'Gewonnen!',
+        info_lost: 'Verloren.',
+        info_wave: 'Welle ',
+        info_fires: ' Feuer',
+        key_spot: '▶ Bauplatz ',
+        building_fallback: 'Gebäude',
+        anton_senses: '👻 Anton wittert hier Rauch',
+        intro_mission: 'Einsatz ',
+        anton_attrib_inline: '— Anton, der Burggeist',
+        reset_confirm: 'Kampagne wirklich von vorne beginnen? Der Fortschritt wird gelöscht.',
+        lvl_locked_title: 'Zuerst den vorherigen Einsatz gewinnen.',
+        lvl_practice: 'Übung: ',
+        lvl_reset: '↺ Neu beginnen',
+        lvl_reset_title: 'Kampagnen-Fortschritt löschen und wieder bei Einsatz 1 beginnen',
+        level_load_error: 'Einsatz konnte nicht geladen werden.',
+        ti_cost: 'Kosten zum Aufstellen: 💰 ',
+        ti_correct: '✓ Richtig gegen: ',
+        ti_weak: '≈ Notfalls brauchbar: ',
+        ti_danger: '⚠️ Gefährlich auf: ',
+        status_db: 'Datenbank ',
+        status_ready: 'bereit',
+        status_missing: 'fehlt',
+        status_classes: ' Brandklassen · ',
+        status_tools: ' Löschmittel',
+        info_label: 'ℹ Info',
+        info_aria: 'Info: ',
+        hazard_action_gas: 'Gaszufuhr absperren',
+        hazard_action_power: 'Strom abschalten',
+        hazard_button_gas: '🔧 Gas absperren',
+        hazard_button_power: '⚡ Strom abschalten',
+        hazard_warn_gas: 'Bei Gasbränden zuerst die Gaszufuhr absperren!',
+        hazard_warn_power: 'Bei Elektrobränden zuerst den Strom abschalten!'
+      },
+      en: {
+        subtitle: '🚒 Königstein Volunteer Fire Brigade in the Taunus · 150 years',
+        place_loading: 'Mission is loading …',
+        menu_mission: '🎯 Mission ▾',
+        btn_start: 'Start mission',
+        btn_running: 'Running …',
+        btn_restart: 'Restart',
+        lbl_contrast: 'Large text / high contrast',
+        ui_sound: 'Sound',
+        lib_btn: 'Anton\'s Knowledge',
+        hint: 'Choose an extinguisher, then tap a blue build spot. The right extinguisher puts the fire out, the wrong one does nothing — a dangerous one makes the fire flare up. Extinguishers run out (see the gauge on the tower) and must be replaced. Built one wrongly? Tap the tower with no extinguisher selected to remove it (no refund). Keyboard: 1–6 selects the extinguisher, arrow keys pick the build spot, Enter places, Backspace/Delete removes, Space starts.',
+        legend_start: 'Start',
+        legend_path: 'Path to the building',
+        legend_spot: 'Build spot for extinguishers',
+        legend_building: 'Building',
+        card_attrib: '— Anton, the castle ghost 👻',
+        card_ok: 'Understood',
+        lib_title: 'Anton\'s Knowledge 👻',
+        lib_subtitle: 'Which extinguisher suits which fire?',
+        close: 'Close',
+        vig_close: 'Continue',
+        fin_close: 'To the festival 🎉',
+        pregame_title: 'How it works 🎮',
+        pregame_ok: 'Let\'s go! ▶',
+        recap_won: 'Mission complete! 🎉',
+        recap_lost: 'Mission failed',
+        recap_score: 'Knowledge score: ',
+        recap_of: ' of ',
+        recap_ok: ' fires put out correctly · ',
+        recap_through: ' got through · ',
+        recap_mistakes: ' wrong attempts',
+        recap_correct: 'Correct: ',
+        recap_these_fires: 'These fires appeared:',
+        recap_loss_anton: 'No need to fret — next time we\'ll manage it together.',
+        recap_next: 'Next mission ▶',
+        lib_correct: '✓ Correct: ',
+        lib_dangerous: '⚠️ Dangerous: ',
+        lib_loading: 'Loading …',
+        tower_removed: 'Extinguisher removed — no refund.',
+        gas_off: 'Gas supply shut off — good!',
+        power_off: 'Power switched off — good!',
+        info_waves: ' waves — build extinguishers, then start.',
+        info_won: 'Won!',
+        info_lost: 'Lost.',
+        info_wave: 'Wave ',
+        info_fires: ' fires',
+        key_spot: '▶ Build spot ',
+        building_fallback: 'Building',
+        anton_senses: '👻 Anton senses smoke here',
+        intro_mission: 'Mission ',
+        anton_attrib_inline: '— Anton, the castle ghost',
+        reset_confirm: 'Really start the campaign over? Your progress will be erased.',
+        lvl_locked_title: 'Win the previous mission first.',
+        lvl_practice: 'Practice: ',
+        lvl_reset: '↺ Start over',
+        lvl_reset_title: 'Erase campaign progress and start again at mission 1',
+        level_load_error: 'Mission could not be loaded.',
+        ti_cost: 'Cost to place: 💰 ',
+        ti_correct: '✓ Correct against: ',
+        ti_weak: '≈ Usable in a pinch: ',
+        ti_danger: '⚠️ Dangerous on: ',
+        status_db: 'Database ',
+        status_ready: 'ready',
+        status_missing: 'missing',
+        status_classes: ' fire classes · ',
+        status_tools: ' extinguishers',
+        info_label: 'ℹ Info',
+        info_aria: 'Info: ',
+        hazard_action_gas: 'Shut off the gas supply',
+        hazard_action_power: 'Switch off the power',
+        hazard_button_gas: '🔧 Shut off gas',
+        hazard_button_power: '⚡ Switch off power',
+        hazard_warn_gas: 'For gas fires, shut off the gas supply first!',
+        hazard_warn_power: 'For electrical fires, switch off the power first!'
+      }
+    };
+    function tr(key){
+      var pack = UI_STRINGS[lang==='en'?'en':'de'] || UI_STRINGS.de;
+      if (pack && pack[key]!=null) return pack[key];
+      return (UI_STRINGS.de[key]!=null) ? UI_STRINGS.de[key] : key;
+    }
+    function apiLang(){ return '?lang=' + (lang==='en'?'en':'de'); }
+    // Set every static [data-i18n] label from the current language.
+    function applyStaticI18n(){
+      var nodes = document.querySelectorAll('[data-i18n]');
+      Array.prototype.forEach.call(nodes, function(el){
+        var key = el.getAttribute('data-i18n');
+        if (key) el.textContent = tr(key);
+      });
+    }
+
     // Supply-hazard mechanic (ITEM-016), mirroring the server. Kept in step with the
-    // Python HAZARD_* constants.
+    // Python HAZARD_* constants. The labels are language-aware (read through tr).
     var HAZARD_CLASS = {gas: 'C', power: 'electrical'};
-    var HAZARD_ACTION = {gas: 'Gaszufuhr absperren', power: 'Strom abschalten'};
-    var HAZARD_BUTTON = {gas: '🔧 Gas absperren', power: '⚡ Strom abschalten'};
-    var HAZARD_WARN = {gas: 'Bei Gasbränden zuerst die Gaszufuhr absperren!',
-                       power: 'Bei Elektrobränden zuerst den Strom abschalten!'};
+    function hazardAction(h){ return tr('hazard_action_' + h); }
+    function hazardButton(h){ return tr('hazard_button_' + h); }
+    function hazardWarn(h){ return tr('hazard_warn_' + h); }
     function gatedHazardFor(cls){
       if (!level || !level.supplies) return null;
       for (var i=0;i<level.supplies.length;i++){ if (HAZARD_CLASS[level.supplies[i]]===cls) return level.supplies[i]; }
@@ -40,7 +216,7 @@
     }
     function rightActionFor(cid){
       var h=gatedHazardFor(cid);
-      if (h) return HAZARD_ACTION[h];
+      if (h) return hazardAction(h);
       var c=classMap[cid]||{}; return c.right_tool_de||'';
     }
 
@@ -187,7 +363,7 @@
     // with only mission 1 available. Storage clearing is guarded so it can't throw.
     function resetProgress(){
       if (typeof window.confirm === 'function' &&
-          !window.confirm('Kampagne wirklich von vorne beginnen? Der Fortschritt wird gelöscht.')) return;
+          !window.confirm(tr('reset_confirm'))) return;
       campaignProgress = 0;
       try { window.localStorage.removeItem('fd_campaign_progress'); } catch (e) { /* storage off — ignore */ }
       renderLevelBar();
@@ -389,14 +565,14 @@
       ctx.strokeStyle='#78350f'; ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.arc(s[0],s[1],pulse+3,0,Math.PI*2); ctx.stroke();
       ctx.fillStyle='#b45309'; ctx.font='bold 12px system-ui'; ctx.textAlign='center';
-      ctx.fillText('▶ Bauplatz ' + (keyIndex+1), s[0], s[1]-pulse-6);
+      ctx.fillText(tr('key_spot') + (keyIndex+1), s[0], s[1]-pulse-6);
       ctx.restore();
     }
     function drawStart(wp){
       var b=cssv('--blue')||'#2f6fed';
       ctx.fillStyle=shade(b,-0.15); ctx.beginPath(); ctx.arc(wp[0][0],wp[0][1],13,0,Math.PI*2); ctx.fill();
       ctx.fillStyle=b; ctx.beginPath(); ctx.arc(wp[0][0],wp[0][1],8,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle=cssv('--muted')||'#5b6b7f'; ctx.font='600 12px system-ui'; ctx.textAlign='center'; ctx.fillText('Start', wp[0][0], wp[0][1]-20);
+      ctx.fillStyle=cssv('--muted')||'#5b6b7f'; ctx.font='600 12px system-ui'; ctx.textAlign='center'; ctx.fillText(tr('legend_start'), wp[0][0], wp[0][1]-20);
     }
     // Two-tone flat house; KEEPS the red damage flash + the HTML lives display.
     // ITEM-033: how battered the building looks, driven by remaining lives (0 =
@@ -540,7 +716,7 @@
       }
       // name label
       ctx.fillStyle=cssv('--ink')||'#1f2937'; ctx.font='700 13px system-ui'; ctx.textAlign='center';
-      ctx.fillText(b.name_de||'Gebäude', b.x, bodyY+bodyH+16);
+      ctx.fillText(b.name_de||tr('building_fallback'), b.x, bodyY+bodyH+16);
       // ITEM-058: the dramatic staged fire/ruin overlay itself
       if (stage>=1) drawHouseDamage(stage,x,bodyY,W,bodyH,yTop,b.x,hc);
     }
@@ -875,12 +1051,12 @@
       var total=game.schedule.length, handled=game.ext;
       var knowledge = total ? Math.round(100*handled/total) : 0;
       document.getElementById('recapTitle').textContent =
-        game.status==='won' ? 'Einsatz geschafft! 🎉' : 'Einsatz gescheitert';
+        game.status==='won' ? tr('recap_won') : tr('recap_lost');
       document.getElementById('recapTitle').style.color = game.status==='won' ? '#15803d' : '#b91c1c';
-      document.getElementById('recapScore').textContent = 'Wissenswertung: ' + knowledge + '%';
+      document.getElementById('recapScore').textContent = tr('recap_score') + knowledge + '%';
       document.getElementById('recapLine').textContent =
-        handled + ' von ' + total + ' Feuern richtig gelöscht · ' + game.leaked +
-        ' durchgekommen · ' + (game.danger+game.useless) + ' Fehlversuche';
+        handled + tr('recap_of') + total + tr('recap_ok') + game.leaked +
+        tr('recap_through') + (game.danger+game.useless) + tr('recap_mistakes');
       var rows='';
       var seen={};
       game.schedule.forEach(function(ev){
@@ -889,10 +1065,10 @@
         rows += '<div style="display:flex; align-items:center; gap:.5rem; padding:.25rem 0; border-top:1px solid var(--line);">' +
                 '<span style="font-size:1.3rem;">'+(c.icon||'🔥')+'</span>' +
                 '<span style="flex:1;">'+(c.name_de||ev['class'])+'</span>' +
-                '<span style="color:var(--c);">Richtig: '+(rightActionFor(ev['class'])||'')+'</span></div>';
+                '<span style="color:var(--c);">'+tr('recap_correct')+(rightActionFor(ev['class'])||'')+'</span></div>';
       });
       document.getElementById('recapClasses').innerHTML =
-        '<div style="color:var(--muted); margin-bottom:.2rem;">Diese Feuer kamen vor:</div>' + rows;
+        '<div style="color:var(--muted); margin-bottom:.2rem;">'+tr('recap_these_fires')+'</div>' + rows;
 
       // Anton closes the mission and notes the rescue bonus. (Campaign progress is
       // already advanced in handleEnd(), before the reward vignette/finale plays.)
@@ -906,7 +1082,7 @@
           if (game.leaked===0 && antonLines.bonus) msg += (msg ? '  ' : '') + '⭐ ' + antonLines.bonus;
         } else {
           // Never scold: a gentle, encouraging word on a loss.
-          msg = 'Kein Grund zu hadern — beim nächsten Mal schaffen wir das zusammen.';
+          msg = tr('recap_loss_anton');
         }
         if (msg) antonEl.textContent = '👻 ' + msg;
         if (game.status==='won' && missionNo){
@@ -914,7 +1090,7 @@
           levelsMeta.forEach(function(l){ if (l.campaign && l.mission===missionNo+1) nxt=l; });
           if (nxt && missionUnlocked(nxt.mission)){
             nextBtn.style.display='';
-            nextBtn.textContent='Nächster Einsatz ▶';
+            nextBtn.textContent=tr('recap_next');
             nextBtn.onclick=function(){ document.getElementById('recap').style.display='none'; loadLevel(nxt.index); };
           }
         }
@@ -936,11 +1112,11 @@
         rows += '<div style="padding:.5rem 0; border-top:1px solid var(--line);">' +
           '<div style="font-weight:600;">'+(c.icon||'🔥')+' '+(c.name_de||cid)+'</div>' +
           '<div style="color:var(--ink);">'+(c.card_de||'')+'</div>' +
-          '<div style="color:var(--c);">✓ Richtig: '+(goods.join(', ')||'—')+'</div>' +
-          (dangers.length ? '<div style="color:var(--red);">⚠️ Gefährlich: '+dangers.join(', ')+'</div>' : '') +
+          '<div style="color:var(--c);">'+tr('lib_correct')+(goods.join(', ')||'—')+'</div>' +
+          (dangers.length ? '<div style="color:var(--red);">'+tr('lib_dangerous')+dangers.join(', ')+'</div>' : '') +
           '</div>';
       });
-      body.innerHTML = rows || '<p>Wird geladen …</p>';
+      body.innerHTML = rows || '<p>'+tr('lib_loading')+'</p>';
     }
     function openLib(){ buildLib(); if (game && game.status==='playing') paused=true; document.getElementById('lib').style.display='flex'; }
     function closeLib(){ document.getElementById('lib').style.display='none'; paused=false; last=performance.now(); }
@@ -982,7 +1158,7 @@
           // supply still on: spraying does nothing — cut the supply first. ITEM-040:
           // a shot that plainly can't touch this fire never spends any charge.
           target.reaction='useless'; target.reactionUntil=performance.now()+500;
-          showFeedback(HAZARD_WARN[thaz], 'danger');
+          showFeedback(hazardWarn(thaz), 'danger');
           playSound('danger');
           g.useless++;
           continue;
@@ -1089,7 +1265,7 @@
       var before=game.towers.length;
       game.towers = game.towers.filter(function(tw){ return tw.spot_index!==spotIndex; });
       var removed = game.towers.length < before;
-      if (removed){ showFeedback('Löscher abgebaut — kein Rückerstattung.', 'ok'); updateBudget(); }
+      if (removed){ showFeedback(tr('tower_removed'), 'ok'); updateBudget(); }
       return removed;
     }
 
@@ -1106,7 +1282,7 @@
         updateBudget();
       }
       if (g.status==='playing' && g.spawned>=g.schedule.length && g.fires.length===0){ g.status='won'; }
-      showFeedback(hazard==='gas' ? 'Gaszufuhr abgesperrt — gut!' : 'Strom abgeschaltet — gut!', 'ok');
+      showFeedback(hazard==='gas' ? tr('gas_off') : tr('power_off'), 'ok');
       renderHazardControls();
     }
 
@@ -1119,7 +1295,7 @@
         var btn=document.createElement('button');
         var off = game && game.supplies && game.supplies[h]==='off';
         var over = game && (game.status==='won' || game.status==='lost');
-        btn.textContent = HAZARD_BUTTON[h] + (off ? ' ✓' : '');
+        btn.textContent = hazardButton(h) + (off ? ' ✓' : '');
         btn.disabled = off || over;
         btn.onclick = function(){ shutOff(h); };
         bar.appendChild(btn);
@@ -1177,16 +1353,16 @@
     function currentWave(){ if (!game || !game.spawned) return 0; return game.schedule[game.spawned-1].wave + 1; }
     function totalWaves(){ return level && level.waves ? level.waves.length : 0; }
     function infoText(){
-      if (!game || game.status==='idle') return totalWaves() + ' Wellen — Löscher bauen, dann starten.';
-      if (game.status==='won') return 'Gewonnen!';
-      if (game.status==='lost') return 'Verloren.';
-      return 'Welle ' + currentWave() + ' / ' + totalWaves() + ' · ' + game.fires.length + ' Feuer';
+      if (!game || game.status==='idle') return totalWaves() + tr('info_waves');
+      if (game.status==='won') return tr('info_won');
+      if (game.status==='lost') return tr('info_lost');
+      return tr('info_wave') + currentWave() + ' / ' + totalWaves() + ' · ' + game.fires.length + tr('info_fires');
     }
     function updateControls(){
       var btn=document.getElementById('startBtn');
-      if (!game || game.status==='idle'){ btn.textContent='Einsatz starten'; btn.disabled=false; }
-      else if (game.status==='playing'){ btn.textContent='Läuft …'; btn.disabled=true; }
-      else { btn.textContent='Neu starten'; btn.disabled=false; }
+      if (!game || game.status==='idle'){ btn.textContent=tr('btn_start'); btn.disabled=false; }
+      else if (game.status==='playing'){ btn.textContent=tr('btn_running'); btn.disabled=true; }
+      else { btn.textContent=tr('btn_restart'); btn.disabled=false; }
       renderHazardControls();
     }
 
@@ -1365,7 +1541,7 @@
       ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
       ctx.beginPath(); ctx.arc(x,y,r*0.55,0,Math.PI*2); ctx.stroke();
       ctx.fillStyle='#b45309'; ctx.font='12px system-ui'; ctx.textAlign='left';
-      ctx.fillText('👻 Anton wittert hier Rauch', x+r+4, y-2);
+      ctx.fillText(tr('anton_senses'), x+r+4, y-2);
       ctx.restore();
     }
 
@@ -1420,7 +1596,7 @@
       document.getElementById('cardIcon').textContent = '';
       var attrib=document.getElementById('cardAttrib'); if (attrib) attrib.style.display='none';
       document.getElementById('cardTitle').textContent =
-        (missionNo ? ('Einsatz ' + missionNo + ' · ') : '') + (level ? level.name : '');
+        (missionNo ? (tr('intro_mission') + missionNo + ' · ') : '') + (level ? level.name : '');
       var el=document.getElementById('cardText'); el.textContent='';
       var parts=[antonLines.open];
       if (antonLines.anecdote) parts.push(antonLines.anecdote);
@@ -1435,7 +1611,7 @@
       var g=document.createElement('span'); g.textContent='👻';
       g.style.fontSize='1.8rem'; g.style.display='block'; g.style.marginTop='.2rem';
       el.appendChild(g);
-      var a=document.createElement('span'); a.textContent='— Anton, der Burggeist';
+      var a=document.createElement('span'); a.textContent=tr('anton_attrib_inline');
       a.style.fontSize='.8rem'; a.style.color='var(--muted)'; a.style.display='block';
       el.appendChild(a);
       document.getElementById('card').style.display='flex';
@@ -1496,7 +1672,7 @@
     }
 
     function loadLevel(i){
-      fetch('/api/level/'+i).then(function(r){return r.json();}).then(function(data){
+      fetch('/api/level/'+i+apiLang()).then(function(r){return r.json();}).then(function(data){
         if (data.error) return;
         level = data; game = newGame(level); sprays = []; prevStatus='idle';
         seen = {}; paused = false; hintShown = false; currentIndex = i; keyIndex = -1;
@@ -1514,7 +1690,7 @@
         // ITEM-057 Version A: on phone-landscape, show the pre-game instruction
         // overlay once for this freshly-loaded level (desktop/portrait never see it).
         pregameShown = false; maybeShowPregame();
-      }).catch(function(){ document.getElementById('place').textContent='Einsatz konnte nicht geladen werden.'; });
+      }).catch(function(){ document.getElementById('place').textContent=tr('level_load_error'); });
     }
 
     // ITEM-036: each tool is a card with a two-tone flat extinguisher graphic + label
@@ -1522,7 +1698,7 @@
     // for placement (the game action); ℹ opens the info pop-up. Tools stay tellable
     // apart by label + shape (not colour), keyboard-selectable (1..N) and touch-sized.
     function loadTools(){
-      return fetch('/api/tools').then(function(r){return r.json();}).then(function(list){
+      return fetch('/api/tools'+apiLang()).then(function(r){return r.json();}).then(function(list){
         toolsList=list; var bar=document.getElementById('toolPalette'); bar.innerHTML='';
         list.forEach(function(t, idx){
           toolMap[t.id]=t;
@@ -1569,10 +1745,10 @@
         var lab=(cc.icon||'')+' '+(cc.name_de||cid)+' ('+(cc.letter||'')+')';
         if (o==='good') goods.push(lab); else if (o==='danger') dangers.push(lab); else if (o==='weak') weaks.push(lab);
       });
-      var html='<p style="color:var(--muted); margin:.2rem 0;">Kosten zum Aufstellen: 💰 '+t.cost+'</p>';
-      html+='<div style="color:var(--c); margin:.2rem 0;">✓ Richtig gegen: '+(goods.join(', ')||'—')+'</div>';
-      if (weaks.length) html+='<div style="color:var(--muted); margin:.2rem 0;">≈ Notfalls brauchbar: '+weaks.join(', ')+'</div>';
-      if (dangers.length) html+='<div style="color:var(--red); margin:.2rem 0;">⚠️ Gefährlich auf: '+dangers.join(', ')+'</div>';
+      var html='<p style="color:var(--muted); margin:.2rem 0;">'+tr('ti_cost')+t.cost+'</p>';
+      html+='<div style="color:var(--c); margin:.2rem 0;">'+tr('ti_correct')+(goods.join(', ')||'—')+'</div>';
+      if (weaks.length) html+='<div style="color:var(--muted); margin:.2rem 0;">'+tr('ti_weak')+weaks.join(', ')+'</div>';
+      if (dangers.length) html+='<div style="color:var(--red); margin:.2rem 0;">'+tr('ti_danger')+dangers.join(', ')+'</div>';
       document.getElementById('tiBody').innerHTML=html;
       if (game && game.status==='playing') paused=true;
       document.getElementById('toolInfo').style.display='flex';
@@ -1641,29 +1817,29 @@
         var btn=document.createElement('button');
         btn.textContent='M'+l.mission+'. '+l.name + (unlocked ? '' : ' 🔒');
         btn.disabled=!unlocked;
-        if (!unlocked) btn.title='Zuerst den vorherigen Einsatz gewinnen.';
+        if (!unlocked) btn.title=tr('lvl_locked_title');
         if (l.index===currentIndex) btn.className='active';
         btn.onclick=function(){ if (missionUnlocked(l.mission)) loadLevel(l.index); };
         bar.appendChild(btn);
       });
       side.forEach(function(l){
         var btn=document.createElement('button');
-        btn.textContent='Übung: '+l.name;
+        btn.textContent=tr('lvl_practice')+l.name;
         if (l.index===currentIndex) btn.className='active';
         btn.onclick=function(){ loadLevel(l.index); };
         bar.appendChild(btn);
       });
       // A small, unobtrusive "start over" control (clears saved campaign progress).
       var reset=document.createElement('button');
-      reset.textContent='↺ Neu beginnen';
-      reset.title='Kampagnen-Fortschritt löschen und wieder bei Einsatz 1 beginnen';
+      reset.textContent=tr('lvl_reset');
+      reset.title=tr('lvl_reset_title');
       reset.style.fontSize='.78rem'; reset.style.opacity='.65';
       reset.style.borderStyle='dashed'; reset.style.padding='.25rem .6rem';
       reset.onclick=resetProgress;
       bar.appendChild(reset);
     }
     function buildLevelBar(){
-      fetch('/api/levels').then(function(r){return r.json();}).then(function(list){
+      fetch('/api/levels'+apiLang()).then(function(r){return r.json();}).then(function(list){
         levelsMeta=list; loadProgress(); renderLevelBar();
         var camp=levelsMeta.filter(function(l){ return l.campaign && l.mission; })
                            .slice().sort(function(a,b){ return a.mission-b.mission; });
@@ -1671,8 +1847,78 @@
       });
     }
 
+    // --- German→English switch: language load, toggle UI, and live re-render -----
+    // Persisted in localStorage 'fd_lang' with the same guarded pattern as
+    // fd_contrast / fd_sound; a browser that blocks storage never throws.
+    function saveLang(l){ try { window.localStorage.setItem('fd_lang', l==='en'?'en':'de'); } catch(e){} }
+    function loadLang(){
+      var l = null;
+      try { var v = window.localStorage.getItem('fd_lang'); if (v==='en'||v==='de') l=v; } catch(e){ l=null; }
+      if (!l){ try { l = (document.documentElement.lang==='en') ? 'en' : 'de'; } catch(e){ l='de'; } }
+      lang = (l==='en') ? 'en' : 'de';
+      try { document.documentElement.lang = lang; } catch(e){}
+      updateLangToggle(); applyStaticI18n();
+    }
+    function updateLangToggle(){
+      var seg=document.getElementById('langToggle'); if (!seg) return;
+      Array.prototype.forEach.call(seg.querySelectorAll('.seg-btn'), function(b){
+        var on = b.getAttribute('data-lang')===lang;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true':'false');
+      });
+    }
+    // Re-fetch /api/levels in the new language and swap ONLY the names in-place, so
+    // the mission-selector keeps the same indices/order + the current selection and
+    // saved progress. Must run before renderLevelBar() in setLang (ITEM req 5b).
+    function refreshLevelsMeta(){
+      return fetch('/api/levels'+apiLang()).then(function(r){return r.json();}).then(function(list){
+        if (Array.isArray(list) && levelsMeta.length===list.length){
+          for (var i=0;i<list.length;i++){ levelsMeta[i].name = list[i].name; }
+        } else if (Array.isArray(list)){
+          levelsMeta = list;
+        }
+      }).catch(function(){});
+    }
+    // Re-fetch the CURRENT level in the new language and merge ONLY its TEXT fields
+    // into the live `level` (which is also game.level) so geometry/schedule/progress
+    // and any in-progress game are untouched (ITEM req 5a).
+    function relocalizeLevel(){
+      if (currentIndex<0) return Promise.resolve();
+      return fetch('/api/level/'+currentIndex+apiLang()).then(function(r){return r.json();}).then(function(d){
+        if (!d || d.error || !level) return;
+        level.name = d.name; level.place_de = d.place_de;
+        if (level.building && d.building) level.building.name_de = d.building.name_de;
+        antonLines = d.anton || antonLines; level.anton = antonLines;
+        if (d.vignette) level.vignette = d.vignette;
+        try { document.getElementById('place').textContent = d.name + ' · ' + d.place_de; } catch(e){}
+      }).catch(function(){});
+    }
+    // Switch language live — NO reload, and WITHOUT resetting an in-progress game or
+    // campaign progress. Re-fetch every language-bearing feed and re-render.
+    function setLang(l){
+      lang = (l==='en') ? 'en' : 'de';
+      saveLang(lang);
+      try { document.documentElement.lang = lang; } catch(e){}
+      updateLangToggle();
+      applyStaticI18n();                 // static chrome labels
+      // Re-fetch content feeds (classes/tools/matrix/anton) + levels meta + this
+      // level's text, then re-render everything that shows language.
+      Promise.all([loadClasses(), loadTools(), loadMatrix(), loadAnton(),
+                   refreshLevelsMeta(), relocalizeLevel()]).then(function(){
+        renderLevelBar();                // 5b: mission buttons re-localize, selection kept
+        updateAntonMood();
+        updateControls(); updateBudget();
+        loadStatus();                    // 5c: footer/status line re-localizes
+        // If a text overlay is open, re-render it in the new language.
+        var libEl=document.getElementById('lib');
+        if (libEl && libEl.style.display && libEl.style.display!=='none') buildLib();
+        var recapEl=document.getElementById('recap');
+        if (recapEl && recapEl.style.display && recapEl.style.display!=='none') showRecap();
+      });
+    }
+
     function loadClasses(){
-      return fetch('/api/classes').then(function(r){return r.json();}).then(function(list){
+      return fetch('/api/classes'+apiLang()).then(function(r){return r.json();}).then(function(list){
         var leg=document.getElementById('classLegend'); leg.innerHTML='';
         window._classOrder = list.map(function(c){ return c.id; });
         var CV={A:'--a',B:'--b',C:'--c',electrical:'--e',D:'--d',F:'--f'};
@@ -1687,7 +1933,7 @@
     }
 
     function loadMatrix(){
-      return fetch('/api/matrix').then(function(r){return r.json();}).then(function(list){
+      return fetch('/api/matrix'+apiLang()).then(function(r){return r.json();}).then(function(list){
         matrixMap={}; reasonMap={};
         list.forEach(function(x){
           matrixMap[x['class'] + '|' + x.tool] = x.outcome;
@@ -1699,12 +1945,12 @@
     function loadStatus(){
       fetch('/health').then(function(r){return r.json();}).then(function(h){
         document.getElementById('foot').textContent =
-          'Datenbank ' + (h.status==='ok'?'bereit':'fehlt') + ' · ' + h.fire_classes + ' Brandklassen · ' + h.tools + ' Löschmittel';
+          tr('status_db') + (h.status==='ok'?tr('status_ready'):tr('status_missing')) + ' · ' + h.fire_classes + tr('status_classes') + h.tools + tr('status_tools');
       }).catch(function(){});
     }
     // Anton's growth-arc lines + finale (ITEM-028). A fetch failure degrades quietly.
     function loadAnton(){
-      return fetch('/api/anton').then(function(r){return r.json();}).then(function(d){
+      return fetch('/api/anton'+apiLang()).then(function(r){return r.json();}).then(function(d){
         antonArc = (d && d.courage) || []; antonFinale = (d && d.finale) || {};
         updateAntonMood();
       }).catch(function(){ antonArc=[]; antonFinale={}; });
@@ -1750,6 +1996,18 @@
     var _soundCb = document.getElementById('soundToggle');
     if (_soundCb) _soundCb.onchange = function(e){ soundEnabled = e.target.checked; saveSound(e.target.checked); if (soundEnabled) initAudio(); };
     loadSound();
+
+    // --- German→English switch (DE | EN segmented toggle) — same guarded-persistence
+    //     shape as the toggles above. Clicking a half switches language live via
+    //     setLang(): no reload, in-progress game and campaign progress preserved.
+    (function(){
+      var seg=document.getElementById('langToggle');
+      if (!seg) return;
+      Array.prototype.forEach.call(seg.querySelectorAll('.seg-btn'), function(b){
+        b.onclick=function(){ setLang(b.getAttribute('data-lang')); };
+      });
+    })();
+    loadLang();   // decide the language (localStorage 'fd_lang' or served <html lang>) before first fetch
 
     // --- ITEM-053 landscape-phone menus (Option B) — purely presentational: these
     //     handlers only toggle a "dd-open" class, which has no visual effect unless

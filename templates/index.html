@@ -9,21 +9,25 @@
 <body>
   <header>
     <h1>Firefighter Defense — Königstein</h1>
-    <p style="margin:.1rem 0; font-size:.85rem; color:var(--red); font-weight:600;">🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre</p>
-    <p class="place" id="place">Einsatz wird geladen …</p>
+    <p data-i18n="subtitle" style="margin:.1rem 0; font-size:.85rem; color:var(--red); font-weight:600;">🚒 Freiwillige Feuerwehr Königstein im Taunus · 150 Jahre</p>
+    <p class="place" id="place" data-i18n="place_loading">Einsatz wird geladen …</p>
     <p id="antonMood" style="margin:.1rem 0 0; font-size:.82rem; font-style:italic; color:var(--muted);"></p>
   </header>
 
   <div class="bar" id="levelBar"></div>
   <div class="bar">
-    <button id="missionMenuBtn" class="menu-btn" type="button" aria-expanded="false">🎯 Mission ▾</button>
+    <button id="missionMenuBtn" class="menu-btn" type="button" aria-expanded="false" data-i18n="menu_mission">🎯 Mission ▾</button>
     <span class="lives" id="lives"></span>
     <span id="budget" style="font-weight:600;"></span>
-    <button id="startBtn">Einsatz starten</button>
+    <button id="startBtn" data-i18n="btn_start">Einsatz starten</button>
     <span id="settingsGroup">
-      <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
-      <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> Ton</label>
-      <button id="libBtn">Antons Wissen</button>
+      <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> <span data-i18n="lbl_contrast">Große Schrift / Hoher Kontrast</span></label>
+      <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> <span data-i18n="ui_sound">Ton</span></label>
+      <span id="langToggle" class="seg" role="group" aria-label="Sprache / Language">
+        <button type="button" class="seg-btn" data-lang="de">DE</button>
+        <button type="button" class="seg-btn" data-lang="en">EN</button>
+      </span>
+      <button id="libBtn" data-i18n="lib_btn">Antons Wissen</button>
     </span>
     <span id="info" style="color:var(--muted); font-size:.9rem;"></span>
     <button id="gearMenuBtn" class="menu-btn" type="button" aria-expanded="false">⚙</button>
@@ -31,17 +35,17 @@
 
   <div class="bar" id="toolPalette"></div>
   <div class="bar" id="hazardControls"></div>
-  <p class="foot" id="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Löscher leeren sich (Anzeige am Turm) und müssen ersetzt werden. Falsch gebaut? Ohne gewählten Löscher auf den Turm tippen, um ihn abzubauen (keine Rückerstattung). Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Rücktaste/Entf baut ab, Leertaste startet.</p>
+  <p class="foot" id="hint" data-i18n="hint">Löscher wählen, dann auf einen blauen Bauplatz tippen. Der richtige Löscher löscht, der falsche wirkt nicht — ein gefährlicher lässt das Feuer auflodern. Löscher leeren sich (Anzeige am Turm) und müssen ersetzt werden. Falsch gebaut? Ohne gewählten Löscher auf den Turm tippen, um ihn abzubauen (keine Rückerstattung). Tastatur: 1–6 wählt den Löscher, Pfeiltasten wählen den Bauplatz, Enter setzt, Rücktaste/Entf baut ab, Leertaste startet.</p>
   <p id="feedback" style="min-height:1.3em; font-weight:600; text-align:center; margin:.2rem 0;"></p>
 
   <div class="wrap"><canvas id="board" width="960" height="540"></canvas></div>
 
   <div class="legend" id="classLegend"></div>
   <div class="legend">
-    <span style="color:#c2410c">Start</span>
-    <span style="color:#a8a29e">Weg zum Gebäude</span>
-    <span style="color:#0369a1">Bauplatz für Löscher</span>
-    <span style="color:#15803d">Gebäude</span>
+    <span style="color:#c2410c" data-i18n="legend_start">Start</span>
+    <span style="color:#a8a29e" data-i18n="legend_path">Weg zum Gebäude</span>
+    <span style="color:#0369a1" data-i18n="legend_spot">Bauplatz für Löscher</span>
+    <span style="color:#15803d" data-i18n="legend_building">Gebäude</span>
   </div>
   <p class="foot" id="foot">&nbsp;</p>
 
@@ -51,8 +55,8 @@
       <div id="cardIcon" style="font-size:2.6rem;"></div>
       <h3 id="cardTitle" style="margin:.3rem 0;"></h3>
       <p id="cardText" style="line-height:1.5;"></p>
-      <p id="cardAttrib" style="font-size:.8rem; color:var(--muted); margin:.6rem 0;">— Anton, der Burggeist 👻</p>
-      <button id="cardOk">Verstanden</button>
+      <p id="cardAttrib" data-i18n="card_attrib" style="font-size:.8rem; color:var(--muted); margin:.6rem 0;">— Anton, der Burggeist 👻</p>
+      <button id="cardOk" data-i18n="card_ok">Verstanden</button>
     </div>
   </div>
 
@@ -65,9 +69,9 @@
       <p id="recapAnton" style="text-align:center; font-style:italic; color:var(--ink); margin:.2rem 0 .8rem; line-height:1.5;"></p>
       <div id="recapClasses" style="font-size:.9rem;"></div>
       <div style="text-align:center; margin-top:1rem; display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap;">
-        <button id="recapNext" class="active" style="display:none;">Nächster Einsatz ▶</button>
-        <button id="recapAgain">Neu starten</button>
-        <button id="recapLib">Antons Wissen</button>
+        <button id="recapNext" class="active" style="display:none;" data-i18n="recap_next">Nächster Einsatz ▶</button>
+        <button id="recapAgain" data-i18n="btn_restart">Neu starten</button>
+        <button id="recapLib" data-i18n="lib_btn">Antons Wissen</button>
       </div>
     </div>
   </div>
@@ -75,10 +79,10 @@
   <!-- Antons Wissen library (ITEM-014) -->
   <div id="lib" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:12;">
     <div style="background:var(--panel); color:var(--ink); max-width:34rem; max-height:86vh; overflow:auto; margin:1rem; padding:1.2rem 1.4rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
-      <h2 style="margin:.2rem 0; text-align:center;">Antons Wissen 👻</h2>
-      <p style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;">Welcher Löscher passt zu welchem Feuer?</p>
+      <h2 style="margin:.2rem 0; text-align:center;" data-i18n="lib_title">Antons Wissen 👻</h2>
+      <p style="text-align:center; color:var(--muted); margin:.2rem 0 .8rem;" data-i18n="lib_subtitle">Welcher Löscher passt zu welchem Feuer?</p>
       <div id="libBody" style="font-size:.9rem;"></div>
-      <div style="text-align:center; margin-top:1rem;"><button id="libClose">Schließen</button></div>
+      <div style="text-align:center; margin-top:1rem;"><button id="libClose" data-i18n="close">Schließen</button></div>
     </div>
   </div>
 
@@ -88,7 +92,7 @@
       <canvas id="tiCanvas" width="62" height="80" style="display:block; margin:0 auto .2rem;"></canvas>
       <h3 id="tiTitle" style="margin:.2rem 0;"></h3>
       <div id="tiBody" style="font-size:.92rem; text-align:left;"></div>
-      <div style="text-align:center; margin-top:1rem;"><button id="tiClose">Schließen</button></div>
+      <div style="text-align:center; margin-top:1rem;"><button id="tiClose" data-i18n="close">Schließen</button></div>
     </div>
   </div>
 
@@ -99,7 +103,7 @@
       <canvas id="vigCanvas" width="480" height="220" style="width:100%; height:auto; border-radius:12px; background:#0b0704; display:block; margin:.4rem 0;"></canvas>
       <p id="vigCaption" style="line-height:1.5; font-size:.95rem;"></p>
       <p style="font-size:.78rem; color:#c9a98f; margin:.4rem 0;">— Anton, der Burggeist 👻</p>
-      <button id="vigClose" class="active">Weiter</button>
+      <button id="vigClose" class="active" data-i18n="vig_close">Weiter</button>
     </div>
   </div>
 
@@ -110,7 +114,7 @@
       <canvas id="finCanvas" width="480" height="240" style="width:100%; height:auto; border-radius:12px; background:#0a0614; display:block; margin:.4rem 0;"></canvas>
       <p id="finCaption" style="font-style:italic; color:#ddd6fe; margin:.3rem 0;"></p>
       <div id="finLines" style="line-height:1.6; font-size:.98rem; text-align:left; margin:.4rem 0;"></div>
-      <button id="finClose" class="active">Zum Fest 🎉</button>
+      <button id="finClose" class="active" data-i18n="fin_close">Zum Fest 🎉</button>
     </div>
   </div>
 
@@ -122,9 +126,9 @@
        player starts normally. Dismiss by the button, the backdrop, or Esc. -->
   <div id="pregame" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); align-items:center; justify-content:center; z-index:15;">
     <div style="background:var(--panel); color:var(--ink); max-width:30rem; margin:1rem; padding:1.4rem 1.6rem; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,.35);">
-      <h2 style="margin:.2rem 0; text-align:center;">So funktioniert's 🎮</h2>
+      <h2 style="margin:.2rem 0; text-align:center;" data-i18n="pregame_title">So funktioniert's 🎮</h2>
       <p id="pregameText" style="line-height:1.5; margin:.5rem 0 1rem;"></p>
-      <div style="text-align:center;"><button id="pregameOk" class="active">Los geht's! ▶</button></div>
+      <div style="text-align:center;"><button id="pregameOk" class="active" data-i18n="pregame_ok">Los geht's! ▶</button></div>
     </div>
   </div>
 

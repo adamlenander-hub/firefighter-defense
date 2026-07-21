@@ -6,10 +6,22 @@ import firefighter_defense as g
 from helpers import *  # shared test builders/play-drivers
 
 def test_game_page_is_german_and_has_canvas():
+    # Default (no lang) is German-first, byte-for-byte on the <html lang> attribute.
     html = g.render_game_html()
     assert "<html lang=\"de\">" in html
     assert "Königstein" in html
     assert "<canvas" in html
+
+
+def test_game_page_can_render_in_english():
+    # The German→English switch: ?lang=en flips the served <html lang> so the browser
+    # (localStorage 'fd_lang' + the JS i18n) renders English with no reload.
+    html_en = g.render_game_html(lang="en")
+    assert "<html lang=\"en\">" in html_en
+    assert "<html lang=\"de\">" not in html_en
+    # the compact DE | EN segmented toggle is present
+    assert 'id="langToggle"' in html_en
+    assert 'data-lang="de"' in html_en and 'data-lang="en"' in html_en
 
 
 def test_sound_toggle_and_effects_are_wired():
@@ -18,7 +30,7 @@ def test_sound_toggle_and_effects_are_wired():
     # autoplay-unlock can only be judged by a real-browser listen.
     html = g.render_game_html()
     assert 'id="soundToggle"' in html          # the mute checkbox
-    assert "> Ton<" in html                     # labelled in German, default checked
+    assert 'data-i18n="ui_sound">Ton<' in html  # labelled in German (switchable), default checked
     assert "checkbox" in html and 'id="soundToggle" checked' in html
     assert "function playSound" in html         # the single guarded entry point
     assert "function initAudio" in html         # autoplay-safe unlock on user gesture

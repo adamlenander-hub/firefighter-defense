@@ -56,15 +56,17 @@ if __name__ == "__main__":
         init_db()
         ok1, p1 = check_content()
         ok2, p2 = check_levels()
-        ok3, p3 = check_narration()   # ITEM-026: guard Anton's mission hints
-        if ok1 and ok2 and ok3:
+        ok3, p3 = check_narration()          # ITEM-026: guard Anton's mission hints (DE + EN)
+        ok4, p4 = check_english_content()    # German→English switch: English is complete + safe
+        if ok1 and ok2 and ok3 and ok4:
             nc, nt = content_counts()
             print(f"Checks PASSED — {nc} Brandklassen, {nt} Löschmittel, "
                   f"{level_count()} Level, {len(campaign_missions())} Story-Missionen, "
-                  f"Antons Hinweise geprüft, alle Prüfungen bestanden.")
+                  f"Antons Hinweise (DE+EN) geprüft, englische Inhalte vollständig, "
+                  f"alle Prüfungen bestanden.")
             sys.exit(0)
         print("Checks FAILED:")
-        for p in p1 + p2 + p3:
+        for p in p1 + p2 + p3 + p4:
             print("  -", p)
         sys.exit(1)
 

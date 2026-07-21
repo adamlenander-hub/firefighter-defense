@@ -98,6 +98,68 @@ TOOL_KEYWORDS = [
 # warning ("never water"), not a recommendation to use it.
 NEGATION_CUES = ["kein", "nie", "nicht", "ohne", "statt", "weg von"]
 
+# English equivalents (German→English switch). Same ordering discipline: the
+# multi-word "metal powder" phrase is listed under "metal" and blanked BEFORE the
+# bare "powder" keyword is tested, so "the metal powder" is never misread as a
+# recommendation of ABC powder. English matching is case-insensitive (hints mix
+# "CO₂", "ABC powder", lower-case "water"), so both keywords and the working text
+# are lower-cased before comparison.
+TOOL_KEYWORDS_EN = [
+    ("co2", ["co₂", "carbon dioxide"]),
+    ("wetchem", ["wet chemical", "wet-chemical"]),
+    ("foam", ["foam"]),
+    ("water", ["water"]),
+    ("metal", ["specialist metal powder", "metal-fire powder", "metal powder", "metal"]),
+    ("powder", ["abc powder", "dry powder", "powder"]),
+]
+# English negation cues, matched on WORD BOUNDARIES so "another" is not read as "no"
+# and "cannot" is not read as "not" spuriously — a clause naming a tool alongside one
+# of these is a warning ("never water"), not a recommendation.
+NEGATION_CUES_EN = ["no", "not", "never", "without", "instead", "avoid", "away from"]
+
+
+def _hint_recommendation_problems(key, hint, danger_tools, good_tools,
+                                  keywords, negation_cues, boundary):
+    """Scan one mission HINT for a tool RECOMMENDATION (a named tool with no negation
+    cue in its clause) that is dangerous or not-correct for the mission's fires.
+    `boundary` selects the English behaviour (case-insensitive keywords + word-boundary
+    negation); when False the original German (case-sensitive, substring) behaviour is
+    used exactly, so the German guard is byte-for-byte unchanged."""
+    import re
+    problems: list[str] = []
+    for clause in re.split(r"[,.;:!?—\n]", hint):
+        if not clause.strip():
+            continue
+        low = clause.lower()
+        if boundary:
+            negated = any(re.search(r"\b" + re.escape(cue) + r"\b", low) for cue in negation_cues)
+            work = low                      # match keywords case-insensitively
+        else:
+            negated = any(cue in low for cue in negation_cues)
+            work = clause                   # original German behaviour (case-sensitive)
+        for tid, kws in keywords:
+            named = any(kw in work for kw in kws)
+            if not named:
+                continue
+            # Blank this tool's matched words so a later tool (e.g. "powder" inside
+            # "metal powder") can't get a false positive from the same clause.
+            for kw in kws:
+                work = work.replace(kw, " ")
+            if negated:
+                continue  # a warning, not a recommendation — allowed
+            if tid in danger_tools:
+                problems.append(
+                    f"Mission '{key}' hint recommends {tid}, which is DANGEROUS on one "
+                    f"of this mission's fires — Anton must never point to a dangerous tool. "
+                    f"Clause: \"{clause.strip()}\""
+                )
+            elif tid not in good_tools:
+                problems.append(
+                    f"Mission '{key}' hint recommends {tid}, which is not a correct tool "
+                    f"for any of this mission's fires. Clause: \"{clause.strip()}\""
+                )
+    return problems
+
 
 def check_narration() -> tuple[bool, list]:
     """Guard Anton's free prose (ITEM-026). The fire-tool matrix is already checked
@@ -108,18 +170,19 @@ def check_narration() -> tuple[bool, list]:
     no negation cue is treated as a recommendation and must be (a) a correct ('good')
     tool for at least one of the mission's fire classes and (b) never 'danger' for any
     of them. Dangerous tools may still appear in the hint under a warning ("nie Wasser").
+    This now guards BOTH languages (German→English switch), so an English
+    mistranslation can't silently recommend a dangerous tool either.
     Framework-free, so it runs with --check-content."""
     problems: list[str] = []
-    import re
 
+    langs = (
+        ("de", TOOL_KEYWORDS, NEGATION_CUES, False),
+        ("en", TOOL_KEYWORDS_EN, NEGATION_CUES_EN, True),
+    )
     for lv in LEVELS:
         if not lv.get("campaign"):
             continue
         key = lv.get("key", "")
-        hint = anton_de(("missions", key, "hint"))
-        if not hint:
-            problems.append(f"Campaign mission '{key}' is missing Anton's in-play hint.")
-            continue
         classes = set()
         for w in lv.get("waves", []):
             classes.update(w.get("fires", []))
@@ -127,34 +190,82 @@ def check_narration() -> tuple[bool, list]:
                         if MATRIX.get(cid, {}).get(tid) == "danger"}
         good_tools = {tid for cid in classes for tid in (t["id"] for t in TOOLS)
                       if MATRIX.get(cid, {}).get(tid) == "good"}
-
-        # Split into small clauses so a warning cue only excuses its own clause.
-        for clause in re.split(r"[,.;:!?—\n]", hint):
-            if not clause.strip():
+        for lang, keywords, negation_cues, boundary in langs:
+            hint = anton_de(("missions", key, "hint"), lang)
+            if not hint:
+                problems.append(f"Campaign mission '{key}' is missing Anton's {lang} in-play hint.")
                 continue
-            negated = any(cue in clause.lower() for cue in NEGATION_CUES)
-            work = clause
-            for tid, keywords in TOOL_KEYWORDS:
-                named = any(kw in work for kw in keywords)
-                if not named:
-                    continue
-                # Blank this tool's matched words so later tools (e.g. "Pulver" inside
-                # "Metallbrandpulver") don't get a false positive.
-                for kw in keywords:
-                    work = work.replace(kw, " ")
-                if negated:
-                    continue  # a warning, not a recommendation — allowed
-                if tid in danger_tools:
-                    problems.append(
-                        f"Mission '{key}' hint recommends {tid}, which is DANGEROUS on one "
-                        f"of this mission's fires — Anton must never point to a dangerous tool. "
-                        f"Clause: \"{clause.strip()}\""
-                    )
-                elif tid not in good_tools:
-                    problems.append(
-                        f"Mission '{key}' hint recommends {tid}, which is not a correct tool "
-                        f"for any of this mission's fires. Clause: \"{clause.strip()}\""
-                    )
+            problems.extend(_hint_recommendation_problems(
+                key, hint, danger_tools, good_tools, keywords, negation_cues, boundary))
+    return (len(problems) == 0, problems)
+
+
+def check_english_content() -> tuple[bool, list]:
+    """Confirm the English translation is COMPLETE and its safety headlines survive.
+
+    Checks that every player-visible German field has an English counterpart (fire
+    classes, tools, ALL of Anton's lines, every level's name/place/building), re-asserts
+    the reference's headline lessons still land in English (water on a fat fire, water
+    on an electrical fire, cut-the-gas-first), and runs the English narration guard so a
+    mistranslation can't quietly recommend a dangerous tool. Framework-free."""
+    problems: list[str] = []
+
+    # 1. Fire classes: name + examples always; note only where a German note exists.
+    for c in FIRE_CLASSES:
+        if not (c.get("name_en") or "").strip():
+            problems.append(f"Fire class {c['id']} is missing name_en.")
+        if not (c.get("examples_en") or "").strip():
+            problems.append(f"Fire class {c['id']} is missing examples_en.")
+        if c.get("note_de") and not (c.get("note_en") or "").strip():
+            problems.append(f"Fire class {c['id']} is missing note_en.")
+
+    # 2. Tools: name + short label.
+    for t in TOOLS:
+        if not (t.get("name_en") or "").strip():
+            problems.append(f"Tool {t['id']} is missing name_en.")
+        if not (t.get("short_en") or "").strip():
+            problems.append(f"Tool {t['id']} is missing short_en.")
+
+    # 3. Every one of Anton's lines (an L-node has both 'de' and 'en' keys).
+    def _walk(node, path):
+        if isinstance(node, dict):
+            if "de" in node and "en" in node:      # an L(...) node
+                if not (node.get("en") or "").strip():
+                    problems.append("Anton line missing English: " + "/".join(path))
+                return
+            for k, v in node.items():
+                _walk(v, path + [str(k)])
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                _walk(v, path + [str(i)])
+    _walk(ANTON, ["ANTON"])
+
+    # 4. Every level's player-visible text.
+    for i, lv in enumerate(LEVELS):
+        if not (lv.get("name_en") or "").strip():
+            problems.append(f"Level {i} ('{lv.get('key')}') is missing name_en.")
+        if not (lv.get("place_en") or "").strip():
+            problems.append(f"Level {i} ('{lv.get('key')}') is missing place_en.")
+        if not ((lv.get("building") or {}).get("name_en") or "").strip():
+            problems.append(f"Level {i} ('{lv.get('key')}') building is missing name_en.")
+
+    # 5. Safety headlines must survive in English.
+    fat = (feedback_reason("F", "water", "en") or "").lower()
+    if "fireball" not in fat:
+        problems.append("English safety headline lost: water on a fat fire must warn of a fireball.")
+    elec = (feedback_reason("electrical", "water", "en") or "").lower()
+    if "electric shock" not in elec:
+        problems.append("English safety headline lost: water on an electrical fire must warn of electric shock.")
+    c_note = next((c.get("note_en") or "" for c in FIRE_CLASSES if c["id"] == "C"), "")
+    gas = (HAZARD_WARN_EN.get("gas", "") + " " + c_note).lower()
+    if "gas supply" not in gas:
+        problems.append("English safety headline lost: gas fires must say to shut off the gas supply first.")
+
+    # 6. The English narration guard (also covers German — belt and braces here).
+    ok_narr, narr = check_narration()
+    if not ok_narr:
+        problems.extend(narr)
+
     return (len(problems) == 0, problems)
 
 

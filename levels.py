@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from config import *
 from content import *
+from content import _by_lang  # underscore-name: not pulled in by `import *`
 
 # --- Levels (ITEM-007): the map, path, build spots, and building, as data -----
 #
@@ -19,7 +20,9 @@ LEVELS = [
         "campaign": True,
         "mission": 1,
         "name": "Die Nacht des Fachwerkfeuers",
+        "name_en": "The Night of the Timber-Frame Fire",
         "place_de": "Enge Fachwerkgasse in der Königsteiner Altstadt",
+        "place_en": "A narrow half-timbered lane in Königstein's old town",
         "size": {"w": 960, "h": 540},
         "path": [[20, 150], [320, 150], [320, 350], [640, 350], [640, 160], [880, 160]],
         "build_spots": [[190, 90], [400, 250], [520, 410], [760, 100], [770, 250]],
@@ -28,7 +31,7 @@ LEVELS = [
         # all-powder defence, since powder does nothing to a fat fire — leaks 3 fires
         # and loses. Correct play (right tool per class) leaks none and wins with room
         # to spare. Budget stays generous here; the tight budget squeeze is ITEM-017.
-        "building": {"x": 900, "y": 160, "lives": 3, "name_de": "Wohnhaus"},
+        "building": {"x": 900, "y": 160, "lives": 3, "name_de": "Wohnhaus", "name_en": "House"},
         "budget": 220,
         # Waves of fires (the MVP trio for this level: solids, electrical, cooking oil).
         "waves": [
@@ -46,14 +49,16 @@ LEVELS = [
         "campaign": True,
         "mission": 3,
         "name": "Der Kurpark im Sturm",
+        "name_en": "The Spa Park in the Storm",
         "place_de": "Wege durch den Königsteiner Kurpark",
+        "place_en": "Paths through the Königstein spa park",
         "size": {"w": 960, "h": 540},
         "path": [[20, 430], [240, 430], [240, 120], [520, 120], [520, 440], [820, 440], [820, 220]],
         "build_spots": [[140, 300], [360, 55], [430, 300], [660, 370], [700, 300]],
         # ITEM-017 balance: lives 3 and enough electrical + cooking-oil fires that no
         # single-tool spam can win — e.g. powder/CO₂ leak the cooking-oil fires, the
         # wet-chemical tool leaks the electrical fires. Only a correct mix wins.
-        "building": {"x": 850, "y": 200, "lives": 3, "name_de": "Kurhaus"},
+        "building": {"x": 850, "y": 200, "lives": 3, "name_de": "Kurhaus", "name_en": "Spa House"},
         "budget": 240,
         "waves": [
             {"gap": 1.2, "fires": ["A", "A", "B"]},
@@ -72,11 +77,13 @@ LEVELS = [
         "campaign": False,   # side / training level — NOT one of the four story missions
         "mission": None,
         "name": "Feuer in der Schlosserei",
+        "name_en": "Fire in the Metal Workshop",
         "place_de": "Die alte Schlosserei am Fuß des Königsteiner Burgbergs",
+        "place_en": "The old metal workshop at the foot of Königstein's castle hill",
         "size": {"w": 960, "h": 540},
         "path": [[20, 130], [280, 130], [280, 380], [560, 380], [560, 170], [820, 170], [820, 430]],
         "build_spots": [[150, 60], [380, 270], [700, 90], [720, 300], [430, 470]],
-        "building": {"x": 880, "y": 430, "lives": 3, "name_de": "Werkstatt"},
+        "building": {"x": 880, "y": 430, "lives": 3, "name_de": "Werkstatt", "name_en": "Workshop"},
         "budget": 320,
         "supplies": ["gas", "power"],
         "waves": [
@@ -106,11 +113,13 @@ LEVELS = [
         "campaign": True,
         "mission": 2,
         "name": "Der Brand in der Burgbibliothek",
+        "name_en": "The Fire in the Castle Library",
         "place_de": "Das alte Archiv in der Königsteiner Burg",
+        "place_en": "The old archive in Königstein's castle",
         "size": {"w": 960, "h": 540},
         "path": [[20, 120], [260, 120], [260, 360], [540, 360], [540, 170], [820, 170], [820, 430]],
         "build_spots": [[150, 250], [400, 260], [400, 460], [690, 90], [700, 300]],
-        "building": {"x": 890, "y": 430, "lives": 3, "name_de": "Archiv"},
+        "building": {"x": 890, "y": 430, "lives": 3, "name_de": "Archiv", "name_en": "Archive"},
         "budget": 200,
         "supplies": ["power"],
         # Correct play: cut the power (handles the electrical fault cleanly, no water on
@@ -139,14 +148,16 @@ LEVELS = [
         "campaign": True,
         "mission": 4,
         "name": "Das Jubiläumsfeuerwerk in Gefahr",
+        "name_en": "The Anniversary Fireworks in Danger",
         "place_de": "Die Festbühne beim Jubiläumsfest",
+        "place_en": "The festival stage at the anniversary celebration",
         "size": {"w": 960, "h": 540},
         "path": [[20, 200], [220, 200], [220, 430], [500, 430], [500, 150], [760, 150], [760, 400]],
         # ITEM-032: spot 2 was [360,100] = 148.7px from the path, beyond a tower's
         # 130px reach (a tower there hit nothing). Moved to [440,90] = 84.9px out —
         # still ≥46px clear of the road, now comfortably within reach of the bend.
         "build_spots": [[120, 320], [360, 300], [440, 90], [640, 280], [690, 60]],
-        "building": {"x": 840, "y": 400, "lives": 3, "name_de": "Festbühne"},
+        "building": {"x": 840, "y": 400, "lives": 3, "name_de": "Festbühne", "name_en": "Festival Stage"},
         "budget": 300,
         "waves": [
             {"gap": 1.3, "fires": ["B", "B", "electrical"]},
@@ -287,20 +298,26 @@ def path_point_at(waypoints: list, t: float) -> tuple:
     return (float(waypoints[-1][0]), float(waypoints[-1][1]))
 
 
-def level_json(index: int) -> dict | None:
+def level_json(index: int, lang: str = "de") -> dict | None:
     """A level's data ready to hand to the browser. Framework-free, so testable
-    without a server."""
+    without a server. Keys are unchanged (name/place_de/building.name_de) so the
+    default (German) response is byte-identical; only the VALUES switch language."""
     lv = get_level(index)
     if lv is None:
         return None
+    # A COPY of the building with its name switched but WITHOUT the internal
+    # name_en key, so the default German payload stays byte-identical.
+    b = lv["building"]
+    building = {k: v for k, v in b.items() if k != "name_en"}
+    building["name_de"] = _by_lang(b.get("name_de"), b.get("name_en"), lang)
     return {
         "index": index,
-        "name": lv["name"],
-        "place_de": lv["place_de"],
+        "name": _by_lang(lv["name"], lv.get("name_en"), lang),
+        "place_de": _by_lang(lv["place_de"], lv.get("place_en"), lang),
         "size": lv["size"],
         "path": lv["path"],
         "build_spots": lv["build_spots"],
-        "building": lv["building"],
+        "building": building,
         "budget": lv.get("budget", 0),
         # Which supplies (gas/power) this level lets you cut off (ITEM-016).
         "supplies": lv.get("supplies", []),
@@ -312,18 +329,18 @@ def level_json(index: int) -> dict | None:
         "key": lv.get("key"),
         "campaign": bool(lv.get("campaign")),
         "mission": lv.get("mission"),
-        "anton": mission_lines_de(lv.get("key", "")),
+        "anton": mission_lines_de(lv.get("key", ""), lang),
         # The reward vignette that plays when this mission is won (ITEM-028).
-        "vignette": vignette_de(lv.get("key", "")),
+        "vignette": vignette_de(lv.get("key", ""), lang),
     }
 
 
-def levels_index() -> list:
+def levels_index(lang: str = "de") -> list:
     """The level list for the switcher, with campaign metadata so the browser can
     show the four story missions in order (and gate them) and keep the training
-    level as a free-choice side level (ITEM-027)."""
+    level as a free-choice side level (ITEM-027). Key 'name' unchanged; value switches."""
     return [
-        {"index": i, "name": lv["name"], "key": lv.get("key"),
+        {"index": i, "name": _by_lang(lv["name"], lv.get("name_en"), lang), "key": lv.get("key"),
          "campaign": bool(lv.get("campaign")), "mission": lv.get("mission")}
         for i, lv in enumerate(LEVELS)
     ]

@@ -42,6 +42,17 @@
     }
     button.active { background: var(--red); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.15); }
     button:disabled { opacity: .5; cursor: default; }
+    /* German→English language switch: a compact DE | EN segmented toggle. Matches the
+       flat button look; the active half is highlighted. It lives inside #settingsGroup
+       so it inherits the landscape-phone dropdown behaviour with the other settings. */
+    .seg { display: inline-flex; align-items: stretch; border-radius: 14px;
+           overflow: hidden; box-shadow: 0 2px 0 var(--line); background: var(--panel); }
+    .seg-btn { font: inherit; font-weight: 700; border: none; border-radius: 0;
+               background: var(--panel); color: var(--muted); cursor: pointer;
+               padding: .4rem .8rem; min-height: 44px; box-shadow: none;
+               border-left: 1px solid var(--line); }
+    .seg-btn:first-child { border-left: none; }
+    .seg-btn.active { background: var(--red); color: #fff; }
     label { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; color: var(--muted); }
     label input { width: 20px; height: 20px; }
     /* ITEM-036 extinguisher palette cards: graphic + label + info affordance */
