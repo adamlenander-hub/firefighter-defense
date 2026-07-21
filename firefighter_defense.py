@@ -1672,7 +1672,6 @@ GAME_HTML = """<!DOCTYPE html>
     <span id="budget" style="font-weight:600;"></span>
     <button id="startBtn">Einsatz starten</button>
     <span id="settingsGroup">
-      <label style="font-size:.85rem;"><input type="checkbox" id="cardsToggle" checked> Antons Karten</label>
       <label style="font-size:.85rem;"><input type="checkbox" id="contrastToggle"> Große Schrift / Hoher Kontrast</label>
       <label style="font-size:.85rem;"><input type="checkbox" id="soundToggle" checked> Ton</label>
       <button id="libBtn">Antons Wissen</button>
@@ -1835,7 +1834,6 @@ GAME_HTML = """<!DOCTYPE html>
     var matrixMap = {};     // "class|tool" -> outcome (good/weak/useless/danger)
     var reasonMap = {};     // "class|tool" -> Anton's feedback line (ITEM-012)
     var seen = {};          // fire classes already introduced this session (ITEM-011)
-    var cardsEnabled = true;
     var paused = false;     // true while an explanation card is up
     var feedbackUntil = 0;
     var selectedTool = null;
@@ -3194,9 +3192,9 @@ GAME_HTML = """<!DOCTYPE html>
     }
     // Anton opens a story mission (ITEM-026/027): he senses the trouble and tells a
     // short Königstein anecdote. One calm card at the start — reuses the existing
-    // card modal + toggle, so it can be turned off and doesn't stack extra pauses.
+    // card modal so it doesn't stack extra pauses.
     function showMissionIntro(){
-      if (!cardsEnabled || !isCampaign || !antonLines || !antonLines.open) return;
+      if (!isCampaign || !antonLines || !antonLines.open) return;
       // ITEM-057: keep the top clear so the info text is easy to read on a short
       // landscape screen — no top icon, and the static attribution line is hidden
       // (its ghost + name are appended to the BOTTOM of the text below instead).
@@ -3225,7 +3223,7 @@ GAME_HTML = """<!DOCTYPE html>
       paused=true;
     }
     function maybeShowCard(){
-      if (!cardsEnabled || !game) return;
+      if (!game) return;
       for (var i=0;i<game.fires.length;i++){
         var cls=game.fires[i].cls;
         if (!seen[cls]){ seen[cls]=true; showCard(cls); return; }
@@ -3505,7 +3503,6 @@ GAME_HTML = """<!DOCTYPE html>
       if (ok) ok.onclick = function(){ hidePregame(); };
       if (pg) pg.addEventListener('click', function(e){ if (e.target===pg) hidePregame(); });
     })();
-    document.getElementById('cardsToggle').onchange = function(e){ cardsEnabled = e.target.checked; };
     document.getElementById('libBtn').onclick = openLib;
     document.getElementById('libClose').onclick = closeLib;
     document.getElementById('recapLib').onclick = openLib;

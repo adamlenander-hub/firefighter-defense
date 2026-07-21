@@ -116,6 +116,21 @@ def test_sound_toggle_and_effects_are_wired():
     assert "fd_sound" in html                   # guarded localStorage persistence
 
 
+def test_antons_karten_card_toggle_removed_cards_always_on():
+    # ITEM-043: the "Antons Karten" checkbox that could hide Anton's "meet the fire"
+    # info cards has been removed — the cards are always shown on first appearance of
+    # each class now. Guard that the toggle, its state variable, and its change
+    # handler are all gone, and that the card-show paths no longer gate on it.
+    html = g.render_game_html()
+    assert 'id="cardsToggle"' not in html       # the checkbox element is gone
+    assert "Antons Karten" not in html          # and its German label
+    assert "cardsEnabled" not in html           # state variable + every gate removed
+    assert "function maybeShowCard(" in html    # the per-class card path still exists
+    assert "function showMissionIntro(" in html # as does the mission-intro card path
+    # the other controls in the settings row stay intact
+    assert 'id="soundToggle"' in html and 'id="contrastToggle"' in html
+
+
 def test_health_payload_shape():
     g.init_db()  # ensure the default db exists so schema_version reads back
     payload = g.health_payload()
