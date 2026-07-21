@@ -237,6 +237,12 @@
     // record for its tower (new target + until pushed ~1s out), so a firing tower
     // shows one continuous animated stream that fades ~1s after its last shot.
     var sprays = {};
+    // ITEM-063: a cosmetic, framework-free queue of fires that were just put out —
+    // each record remembers where the flame was and how big it was the instant it
+    // died, then drawDyingFires() eases that size down to 0 over ~300ms so the fire
+    // visibly shrinks away instead of popping. Mirrors the `sprays` pattern above:
+    // purely cosmetic, reset alongside it, never read by any rule/logic code.
+    var dyingFires = [];
     var game = null;        // running game state, or null before start
     var last = 0;
     // --- Anton-as-narrator + campaign state (ITEM-026 / ITEM-027) ---
@@ -1178,8 +1184,23 @@
           // out on the actual put-out.
           tw.charge--;
           var dmg = (outcome==='good') ? GOOD_HIT_DAMAGE : WEAK_HIT_DAMAGE;
-          target.hp = (target.hp===undefined ? FIRE_HP : target.hp) - dmg;
+          var hpBeforeHit = (target.hp===undefined ? FIRE_HP : target.hp);
+          target.hp = hpBeforeHit - dmg;
           if (target.hp <= 1e-9){
+            // ITEM-063: this shot just killed the fire — capture the flame's size and
+            // position the instant BEFORE death (same formula drawFire uses) so the
+            // purely cosmetic dying-fires queue can shrink it away instead of it
+            // popping out of existence. No rule/hp/removal logic below is touched.
+            var dPos = firePos(target);
+            var dHpFrac = Math.max(0, Math.min(1, hpBeforeHit));
+            var dFs = 26 * 1.9;                      // mirrors drawFire's s=26, fs=s*1.9
+            dyingFires.push({
+              x: dPos[0], y: dPos[1] + 26*0.55,       // mirrors drawFire's baseY = y + s*0.55
+              cls: target.cls,
+              startScale: dFs * (0.62 + 0.38*dHpFrac),// mirrors drawFire's flameScale
+              ph: (target.id||0)*1.7,                 // same per-fire phase drawFire used
+              born: performance.now(), until: performance.now()+300
+            });
             g.fires = g.fires.filter(function(f){ return f.id!==target.id; });
             g.budget += EXTINGUISH_REWARD + (outcome==='good' ? SMART_BONUS : 0); updateBudget();
             g.ext++;
@@ -1238,7 +1259,7 @@
       if (!game) return;
       if (game.status==='idle'){ game.status='playing'; last=performance.now(); }
       else if (game.status==='won' || game.status==='lost'){
-        game=newGame(level); sprays={}; hintShown=false; seen={}; prevStatus='idle';
+        game=newGame(level); sprays={}; dyingFires=[]; hintShown=false; seen={}; prevStatus='idle';
       }
       updateControls(); updateBudget();
     }
@@ -1346,6 +1367,28 @@
       ctx.fillStyle = low ? (contrastEnabled?'#fca5a5':'#b91c1c') : (contrastEnabled?'#bbf7d0':'#15803d');
       var fillH = Math.max(0,(gh-2)*frac);
       ctx.fillRect(gx+1, gy+1+((gh-2)-fillH), gw-2, fillH);
+    }
+    // ITEM-063: `dyingFires` holds one cosmetic record per fire that was just put
+    // out (pushed in advance(), see above). Each frame we ease its remembered flame
+    // size down from `startScale` to 0 over its 300ms life, drawing the exact same
+    // flame shape the live fire used (drawFireCharacter) so it reads as the fire
+    // shrinking away rather than a hard cut. Purely visual — the real fire is
+    // already gone from g.fires by the time this ever runs.
+    function drawDyingFires(){
+      var now=performance.now(), keep=[];
+      for (var i=0;i<dyingFires.length;i++){
+        var d=dyingFires[i];
+        if (d.until<now) continue;                 // fully shrunk — drop the record
+        keep.push(d);
+        var t = Math.max(0, Math.min(1, (now-d.born)/(d.until-d.born)));
+        var scale = d.startScale * (1-t);           // ease the flame down to nothing
+        if (scale<=0.5) continue;                   // nothing left worth drawing
+        var col = classColour(d.cls), hc = contrastEnabled, tt = now*0.001;
+        ctx.save(); ctx.translate(d.x, d.y - scale*0.72);
+        drawFireCharacter(ctx, d.cls, scale, col, tt, d.ph, hc);
+        ctx.restore();
+      }
+      dyingFires=keep;
     }
     // ITEM-062: `sprays` holds one live record per tower (keyed by spot in advance()).
     // A record's `until` keeps getting pushed ~1s out on every shot while a tower
@@ -1668,6 +1711,7 @@
       drawAnton();
       if (game){
         game.fires.forEach(drawFire);
+        drawDyingFires();  // ITEM-063: shrink-away flames for fires just put out
         drawSprays();
         setLives(game.lives);
         drawOverlay();
@@ -1783,7 +1827,7 @@
     function loadLevel(i){
       fetch('/api/level/'+i+apiLang()).then(function(r){return r.json();}).then(function(data){
         if (data.error) return;
-        level = data; game = newGame(level); sprays = {}; prevStatus='idle';
+        level = data; game = newGame(level); sprays = {}; dyingFires = []; prevStatus='idle';
         seen = {}; paused = false; hintShown = false; currentIndex = i; keyIndex = -1;
         antonLines = data.anton || {};
         missionKey = data.key; missionNo = data.mission; isCampaign = !!data.campaign;
