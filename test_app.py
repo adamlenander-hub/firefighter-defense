@@ -177,7 +177,9 @@ def test_check_fails_when_a_safety_fact_is_wrong(tmp_path, monkeypatch):
     # catches it with a clear message (rather than silently teaching it).
     broken = {cid: dict(row) for cid, row in g.MATRIX.items()}
     broken["electrical"]["water"] = "good"
-    monkeypatch.setattr(g, "MATRIX", broken)
+    # build_content (in db.py) reads the matrix when it writes the database, so patch
+    # it there — that's the value check_content ends up validating against the facts.
+    monkeypatch.setattr("db.MATRIX", broken)
     db = str(tmp_path / "broken.db")
     ok, problems = g.check_content(db)
     assert not ok
@@ -523,7 +525,8 @@ def test_every_build_spot_has_clearance():
 def test_check_levels_catches_a_spot_on_the_path(monkeypatch):
     lv = dict(g.LEVELS[0])
     lv["build_spots"] = [list(lv["path"][1])]      # a spot sitting exactly on a path point
-    monkeypatch.setattr(g, "LEVELS", [lv])
+    # check_levels (in checks.py) reads LEVELS from its own module, so patch it there.
+    monkeypatch.setattr("checks.LEVELS", [lv])
     ok, problems = g.check_levels()
     assert not ok and problems
 
