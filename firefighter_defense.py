@@ -1604,15 +1604,15 @@ GAME_HTML = """<!DOCTYPE html>
       /* Compact one-row palette with a small corner ℹ badge instead of the "ℹ Info"
          button (DOM/text unchanged — only the badge's own text is hidden via
          font-size:0 and re-shown through the ::before pseudo-element). */
-      /* ITEM-057 Version A: the six extinguishers become a VERTICAL side strip
-         pinned to the RIGHT edge of the play area (below the top bar). This frees
-         the horizontal palette row's height for the board. It reuses the compact
-         tile styling + corner-ℹ badge below, keeps each tile's tap target, and
-         scrolls internally if all six tiles don't fit the height. */
+      /* ITEM-057 Version A: the six extinguishers sit in a compact block pinned to
+         the RIGHT edge of the play area (below the top bar) — a 2-columns-of-3 grid
+         so all six fit on a short landscape screen without scrolling off the bottom.
+         Reuses the compact tile styling + corner-ℹ badge below, keeps each tile's
+         tap target, and still scrolls internally as a safety net if space is tiny. */
       #toolPalette {
         position: absolute; top: 3rem; right: .35rem; z-index: 20;
-        display: flex; flex-direction: column; align-items: stretch; gap: .3rem;
-        width: 60px; padding: 0; margin: 0;
+        display: grid; grid-template-columns: repeat(2, 58px); gap: .3rem;
+        align-content: start; padding: 0; margin: 0;
         max-height: calc(100dvh - 3.4rem); overflow-y: auto; overflow-x: hidden;
       }
       .tool { position: relative; width: 100%; }
@@ -1637,8 +1637,21 @@ GAME_HTML = """<!DOCTYPE html>
       /* The board fills the freed space: room on the right for the side strip, and
          a taller height budget now that the palette row + hint line no longer sit
          above it. It must not sit under the strip and must not scroll. */
-      .wrap { max-width: 100%; padding-right: 66px; box-sizing: border-box; }
+      .wrap { max-width: 100%; padding-right: 132px; box-sizing: border-box; }
       canvas { width: auto; max-width: 100%; max-height: calc(100dvh - 96px); margin: 0 auto; }
+
+      /* ITEM-057 fix: on a short landscape screen the fullscreen instruction/story
+         modals (the pre-game screen, Anton's mission intro, the recap, Antons Wissen)
+         must FIT — otherwise their dismiss button falls below the fold and can't be
+         reached. Cap each card to the viewport and make only its long TEXT scroll: the
+         icon/title stay at the top and the dismiss button stays in normal flow at the
+         bottom, always visible without scrolling. */
+      #card > div, #pregame > div, #recap > div, #lib > div, #vignette > div, #finale > div {
+        max-height: calc(100dvh - .6rem); display: flex; flex-direction: column;
+      }
+      #cardText, #pregameText, #libBody, #recapClasses {
+        flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      }
     }
   </style>
 </head>

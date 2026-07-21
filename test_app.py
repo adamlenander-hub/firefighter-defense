@@ -1300,17 +1300,30 @@ def _landscape_block(html):
     return after.split("</style>", 1)[0]
 
 
-def test_landscape_toolpalette_is_a_vertical_side_strip():
+def test_landscape_toolpalette_is_a_two_column_side_grid():
     html = g.render_game_html()
     block = _landscape_block(html)
-    # #toolPalette is repositioned as an absolutely-positioned vertical column
-    # pinned to the right edge, scrollable, ~56-64px wide — all inside the query.
+    # #toolPalette is an absolutely-positioned block pinned to the right edge, laid
+    # out as a 2-columns-of-3 grid so all six extinguishers fit a short landscape
+    # screen without scrolling off the bottom — all inside the query.
     assert "#toolPalette {" in block
     tp = block.split("#toolPalette {", 1)[1].split("}", 1)[0]
     assert "position: absolute" in tp
-    assert "flex-direction: column" in tp
+    assert "grid-template-columns: repeat(2" in tp
     assert "right:" in tp
     assert "overflow-y: auto" in tp
+
+
+def test_landscape_modals_fit_screen_with_reachable_button():
+    html = g.render_game_html()
+    block = _landscape_block(html)
+    # instruction/story modals are capped to the viewport height and scroll inside,
+    # and the primary dismiss button is pinned (sticky) so it stays reachable in
+    # landscape rather than falling below the fold.
+    assert "max-height: calc(100dvh - .6rem)" in block
+    # only the long text scrolls, so the dismiss button stays visible at the bottom.
+    assert "#cardText" in block and "#pregameText" in block
+    assert "overflow-y: auto" in block
 
 
 def test_landscape_board_makes_room_for_the_strip():
