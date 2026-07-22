@@ -676,53 +676,100 @@
         houseEmbers(bx, bodyY+bodyH*0.55, hc, W*0.4, 4);      // a few faint dim smoulders
       }
     }
+    // ITEM-064: Burg Königstein castle (Version B, approved) — structure helpers.
+    // Stone wall colour by stage (a touch greyer than the old house cream), with the
+    // same flashing life-lost tint and stage-based darkening the house used.
+    function castleStoneColour(stage, hc, flashing){
+      var base = flashing ? (hc?'#7a2b1e':'#f2b0a0') : (hc?'#e9d9b8':'#d7cbac');
+      if (stage>=3) return hc?'#2b2f36':'#39332b';         // charred near-black
+      if (stage===2) return shade(base,-0.18);             // heavily scorched
+      if (stage===1) return shade(base,-0.08);             // singed
+      return base;
+    }
+    // Two-tone block (flat fill + right-third shadow plane, like the old house body).
+    function castleBlock(c,x,y,w,h,stone){
+      c.fillStyle=stone; c.fillRect(x,y,w,h);
+      c.save(); c.beginPath(); c.rect(x,y,w,h); c.clip();
+      c.fillStyle=shade(stone,-0.12); c.fillRect(x+w*0.66,y,w*0.34,h);
+      c.restore();
+    }
+    // Battlements along a top edge; broken=true drops/jags some (the ruin stage).
+    function castleMerlons(c,x,y,w,fill,edge,mh,broken){
+      var n=Math.max(3,Math.round(w/13)), mw=w/(n*2-1);
+      for (var i=0;i<n;i++){
+        if (broken&&(i===1||i===n-2)) continue;
+        var hh=mh; if (broken&&(i%2===0)) hh=mh*0.5;
+        var mx=x+i*2*mw;
+        c.fillStyle=fill; c.fillRect(mx,y-hh,mw,hh);
+        c.fillStyle=edge; c.fillRect(mx,y-hh,mw,2);
+      }
+    }
+    // Arched opening (gate/window).
+    function castleArch(c,cx,baseY,w,h,fill){
+      c.fillStyle=fill;
+      c.beginPath();
+      c.moveTo(cx-w/2,baseY);
+      c.lineTo(cx-w/2,baseY-h+w/2);
+      c.arc(cx,baseY-h+w/2,w/2,Math.PI,0);
+      c.lineTo(cx+w/2,baseY);
+      c.closePath(); c.fill();
+    }
     function drawBuilding(b){
       var flashing = game && performance.now() < game.flashUntil;
       var hc=contrastEnabled;
       var stage = buildingDamageStage();
-      var cream = flashing ? (hc?'#7a2b1e':'#f2b0a0') : (hc?'#e9d9b8':'#f3e4c2');
-      if (stage>=3) cream = hc?'#2b2f36':'#3a352e';        // charred, near-black walls
-      else if (stage===2) cream = shade(cream,-0.18);      // heavily scorched
-      else if (stage===1) cream = shade(cream,-0.08);      // singed
       var W=94, H=76, x=b.x-W/2, yTop=b.y-H/2;
       var bodyY=yTop+18, bodyH=H-18;
-      // body — TONE1 + a TONE2 shadow plane on the right third
-      ctx.fillStyle=cream; rr(ctx,x,bodyY,W,bodyH,12); ctx.fill();
-      ctx.save(); rr(ctx,x,bodyY,W,bodyH,12); ctx.clip(); ctx.fillStyle=shade(cream,-0.12); ctx.fillRect(x+W*0.66,bodyY,W*0.34,bodyH); ctx.restore();
-      // ruin: a jagged structural crack splitting the charred body
+      var cx=b.x, groundY=bodyY+bodyH;
+      var stone=castleStoneColour(stage,hc,flashing);
+      var edge=hc?'#000':'#141414', dark=hc?'#000':'#160f06';
+      // ITEM-064: Burg Königstein keep + twin corner turrets + gate, replacing the
+      // house body/roof/door/window/crack. Same footprint (W=94) and centre (b.x).
+      var keepW=54, keepH=74, turW=20, turH=44;
+      var keepX=cx-keepW/2, lTurX=keepX-turW+4, rTurX=keepX+keepW-4;
+      [lTurX,rTurX].forEach(function(tx){
+        castleBlock(ctx,tx,groundY-turH,turW,turH,stone);
+        castleMerlons(ctx,tx,groundY-turH,turW,stone,edge,7,stage>=3);
+      });
+      castleBlock(ctx,keepX,groundY-keepH,keepW,keepH,stone);
+      castleMerlons(ctx,keepX,groundY-keepH,keepW,stone,edge,9,stage>=3);
+      // pennant on the keep — only while the castle still stands (not a ruin)
+      if (stage<3){
+        ctx.strokeStyle=edge; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(cx,groundY-keepH-4); ctx.lineTo(cx,groundY-keepH-22); ctx.stroke();
+        ctx.fillStyle= hc?'#ffb703':(cssv('--red')||'#e4572e');
+        ctx.beginPath(); ctx.moveTo(cx,groundY-keepH-22); ctx.lineTo(cx+15,groundY-keepH-18); ctx.lineTo(cx,groundY-keepH-14); ctx.closePath(); ctx.fill();
+      }
+      // arched gate — portcullis lines while intact, dark burnt-out hole once badly ablaze
+      castleArch(ctx,cx,groundY,24,36,stage>=2?dark:shade(stone,-0.5));
+      if (stage<2){
+        ctx.strokeStyle=shade(stone,-0.35); ctx.lineWidth=1.4;
+        for (var i=1;i<4;i++){ ctx.beginPath(); ctx.moveTo(cx-12+i*6,groundY-2); ctx.lineTo(cx-12+i*6,groundY-28); ctx.stroke(); }
+      }
+      // arrow slits + a round window on the keep
+      ctx.fillStyle=dark;
+      [0.34,0.66].forEach(function(fx){ ctx.fillRect(keepX+keepW*fx-2,groundY-keepH*0.62,4,13); });
+      ctx.beginPath(); ctx.arc(cx,groundY-keepH*0.74,5,0,Math.PI*2); ctx.fill();
+      // ruin: a jagged structural crack up the keep
       if (stage>=3){
-        ctx.save(); ctx.strokeStyle=hc?'#000':'#141414'; ctx.lineWidth=2.5; ctx.lineJoin='round';
-        ctx.beginPath(); ctx.moveTo(x+W*0.42,bodyY); ctx.lineTo(x+W*0.52,bodyY+bodyH*0.38); ctx.lineTo(x+W*0.44,bodyY+bodyH*0.68); ctx.lineTo(x+W*0.52,bodyY+bodyH); ctx.stroke();
+        ctx.save(); ctx.strokeStyle=edge; ctx.lineWidth=2.5; ctx.lineJoin='round';
+        ctx.beginPath();
+        ctx.moveTo(keepX+keepW*0.4,groundY-keepH+6);
+        ctx.lineTo(keepX+keepW*0.54,groundY-keepH*0.55);
+        ctx.lineTo(keepX+keepW*0.44,groundY-keepH*0.28);
+        ctx.lineTo(keepX+keepW*0.52,groundY);
+        ctx.stroke();
         ctx.restore();
       }
-      // roof — intact red triangle (bright on damage flash) until the ruin, when it COLLAPSES into a broken slump
-      var red = flashing ? (hc?'#ff5a4d':'#dc2626') : (cssv('--red')||'#e4572e');
-      if (stage>=3){
-        red = hc?'#26282d':'#2a2621';                      // burnt-out, no more red
-        ctx.fillStyle=red; ctx.beginPath();
-        ctx.moveTo(x-6,bodyY+4);
-        ctx.lineTo(x+W*0.20,bodyY-6); ctx.lineTo(x+W*0.34,bodyY+9);
-        ctx.lineTo(x+W*0.52,bodyY-8); ctx.lineTo(x+W*0.68,bodyY+11);
-        ctx.lineTo(x+W*0.86,bodyY-2); ctx.lineTo(x+W+6,bodyY+4);
-        ctx.closePath(); ctx.fill();
-      } else {
-        if (stage>=1) red = shade(red,-0.16*stage);        // roof scorches as it burns
-        ctx.fillStyle=red; ctx.beginPath(); ctx.moveTo(x-6,bodyY+4); ctx.lineTo(x+W/2,yTop-8); ctx.lineTo(x+W+6,bodyY+4); ctx.closePath(); ctx.fill();
-        ctx.fillStyle=shade(red,-0.2); ctx.fillRect(x-6,bodyY,W+12,6);
-      }
-      // door + window — two-tone blue (dark/unlit as a ruin; window blown out once badly ablaze)
-      var blue=cssv('--blue')||'#2f6fed', lit = stage<3;
-      ctx.fillStyle=shade(blue,-0.15); rr(ctx,x+W/2-14,bodyY+18,28,bodyH-18,6); ctx.fill();
-      ctx.fillStyle= lit ? blue : shade(blue,-0.5); rr(ctx,x+W/2-10,bodyY+22,20,bodyH-22,4); ctx.fill();
-      if (stage>=2){                                       // blown-out window: dark hole + jagged glass shards
-        ctx.fillStyle= hc?'#000':'#160f06'; rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
-        ctx.strokeStyle= hc?'#fff':'#4a3720'; ctx.lineWidth=1.4;
-        ctx.beginPath();
-        ctx.moveTo(x+12,bodyY+12); ctx.lineTo(x+20,bodyY+21); ctx.lineTo(x+14,bodyY+30);
-        ctx.moveTo(x+30,bodyY+13); ctx.lineTo(x+22,bodyY+22); ctx.lineTo(x+28,bodyY+30);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle= shade(blue,0.55); rr(ctx,x+12,bodyY+12,18,18,4); ctx.fill();
+      // High-contrast ruin: the charred stone is near-black on a dark field, so trace
+      // a thin light structural outline around the keep + turrets to keep the
+      // silhouette readable. Normal mode doesn't need this.
+      if (stage>=3 && hc){
+        ctx.save(); ctx.strokeStyle='rgba(230,230,230,0.85)'; ctx.lineWidth=1;
+        ctx.strokeRect(keepX,groundY-keepH,keepW,keepH);
+        ctx.strokeRect(lTurX,groundY-turH,turW,turH);
+        ctx.strokeRect(rTurX,groundY-turH,turW,turH);
+        ctx.restore();
       }
       // name label
       ctx.fillStyle=cssv('--ink')||'#1f2937'; ctx.font='700 13px system-ui'; ctx.textAlign='center';
