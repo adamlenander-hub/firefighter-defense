@@ -14,6 +14,7 @@
     var TOWER_CHARGE_BASE = 8;
     var CAMPAIGN_CHARGE_FACTOR = {1: 1.0, 2: 0.85, 3: 0.7, 4: 0.55};
     var MIN_TOWER_CHARGE = 3;
+    var LOSS_HOLD_MS = 3000;   // ITEM-065: how long the lost screen holds on the smoking ruin (and Anton fleeing) before the recap opens
     function towerChargeFor(lv){
       var factor = (lv && lv.mission && CAMPAIGN_CHARGE_FACTOR[lv.mission]) || 1.0;
       return Math.max(MIN_TOWER_CHARGE, Math.round(TOWER_CHARGE_BASE * factor));
@@ -1306,7 +1307,7 @@
       if (!game) return;
       if (game.status==='idle'){ game.status='playing'; last=performance.now(); }
       else if (game.status==='won' || game.status==='lost'){
-        game=newGame(level); sprays={}; dyingFires=[]; hintShown=false; seen={}; prevStatus='idle';
+        game=newGame(level); sprays={}; dyingFires=[]; hintShown=false; seen={}; prevStatus='idle'; lossHoldUntil=0;
       }
       updateControls(); updateBudget();
     }
@@ -1849,6 +1850,7 @@
     }
 
     var prevStatus='idle';
+    var lossHoldUntil = 0;   // ITEM-065: >0 while a loss holds on the ruin; the animation-clock time the recap opens at
     function frame(now){
       var dt = Math.min((now - last)/1000, 0.05); last = now;
       if (game && game.status==='playing' && !paused){
@@ -1864,9 +1866,17 @@
       render();
       if (game && game.status!==prevStatus){
         if (game.status==='won'){ playSound('win'); handleEnd(); }
-        else if (game.status==='lost'){ playSound('lose'); handleEnd(); }
+        else if (game.status==='lost'){ playSound('lose'); lossHoldUntil = performance.now() + LOSS_HOLD_MS; }  // ITEM-065
         updateControls();
         prevStatus = game.status;
+      }
+      // ITEM-065: on a loss, hold ~LOSS_HOLD_MS on the smoking ruin + Anton fleeing
+      // (both already drawn every frame) before opening the recap. Counted off the
+      // animation clock so it pauses if the tab is hidden and leaves no stray timer.
+      // The win path is unaffected -- it still ends immediately above.
+      if (lossHoldUntil && performance.now() >= lossHoldUntil){
+        lossHoldUntil = 0;
+        handleEnd();
       }
       requestAnimationFrame(frame);
     }
@@ -1874,7 +1884,7 @@
     function loadLevel(i){
       fetch('/api/level/'+i+apiLang()).then(function(r){return r.json();}).then(function(data){
         if (data.error) return;
-        level = data; game = newGame(level); sprays = {}; dyingFires = []; prevStatus='idle';
+        level = data; game = newGame(level); sprays = {}; dyingFires = []; prevStatus='idle'; lossHoldUntil=0;
         seen = {}; paused = false; hintShown = false; currentIndex = i; keyIndex = -1;
         antonLines = data.anton || {};
         missionKey = data.key; missionNo = data.mission; isCampaign = !!data.campaign;
@@ -1971,6 +1981,10 @@
       }
       return bestI;
     }
+    // ITEM-065: the board accepts placement/removal only while the game is still in
+    // play (idle = building before start, or playing). Once it's won or lost -- including
+    // the ~3s loss-hold before the recap -- board taps and keys do nothing.
+    function boardLive(){ return !!(game && (game.status==='idle' || game.status==='playing')); }
     function boardPlaceAt(clientX, clientY){
       if (!game || !selectedTool || !level) return;
       var i=nearestSpot(clientX, clientY);
@@ -1981,7 +1995,7 @@
     // placeTower) above are untouched, so whenever a tool IS selected a tap can only
     // ever place, never remove; the one-tap-one-tower placement guarantee holds.
     function boardTapAt(clientX, clientY){
-      if (!game || !level) return;
+      if (!game || !level || !boardLive()) return;
       if (selectedTool){ boardPlaceAt(clientX, clientY); return; }
       var i=nearestSpot(clientX, clientY);
       if (i>=0 && towerAt(i)){ keyIndex=i; removeTower(i); }
@@ -2291,7 +2305,7 @@
       if (k==='Enter'){
         if (isButtonFocus()) return;               // let a focused button activate normally
         keyboardActive=true;
-        if (game && selectedTool && keyIndex>=0) placeTower(keyIndex, selectedTool);
+        if (game && boardLive() && selectedTool && keyIndex>=0) placeTower(keyIndex, selectedTool);
         e.preventDefault(); return;
       }
       // ITEM-042/ITEM-020: Delete/Backspace removes the tower at the keyboard-
@@ -2299,7 +2313,7 @@
       // boardTapAt offers by touch/click.
       if (k==='Delete'||k==='Backspace'){
         if (isButtonFocus()) return;
-        if (game && keyIndex>=0) removeTower(keyIndex);
+        if (game && boardLive() && keyIndex>=0) removeTower(keyIndex);
         e.preventDefault(); return;
       }
       if (k===' '||k==='Spacebar'){
