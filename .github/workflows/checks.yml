@@ -31,8 +31,15 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      # The browser used by check.sh step 6 (the in-browser play test). Installing it
+      # here means that check always runs for real on GitHub, even though it skips
+      # cleanly on a laptop that hasn't installed it.
+      - name: Install Playwright browser
+        run: python3 -m playwright install --with-deps chromium
+
       # Runs the exact same checks as the local pre-save hook, so the two never drift:
       # code parses, fire facts match the reference, the first level is only won by
-      # safe play, the browser code parses, and the full test suite passes.
+      # safe play, the browser code parses, the full test suite passes, and the game
+      # actually works in a real browser (rules match the server, fits phones).
       - name: Run all checks
         run: sh check.sh
