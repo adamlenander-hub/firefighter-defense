@@ -30,13 +30,14 @@ python3 firefighter_defense.py          # run the game → http://localhost:3000
 ./deploy.sh "note about what changed"   # stage tracked changes, commit (runs checks), push → Render redeploy
 ```
 
-The five checks in `check.sh`, each runnable on its own:
+The six checks in `check.sh`, each runnable on its own:
 
 1. `python3 -m py_compile firefighter_defense.py` — the entry point parses (steps 2-5 import the sibling modules, so those parse too).
 2. `python3 firefighter_defense.py --check-content` — fire facts match the reference (headless, no framework).
 3. `python3 firefighter_defense.py --simulate` — the first level is winnable **only** by safe, correct play.
 4. `node --check static/game.js` — the browser code parses (skipped if Node absent).
 5. `pytest -q` — the full test suite (the six `test_*.py` files).
+6. `python3 browser_check.py` — plays the game in a **real headless browser**: confirms the browser's copy of the rules (`static/game.js`) still matches the Python engine (same matrix, same rule constants, same win/lose outcomes on the first level), and that the controls fit common phone screens. Skipped if Playwright absent; installed and enforced in CI. Add `--url https://…` to run the page/phone/health subset against the deployed site.
 
 Run a single test: `pytest test_engine.py::test_name -q` (or `pytest -k pattern` to match by name across all files).
 

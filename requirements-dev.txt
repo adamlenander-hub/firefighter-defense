@@ -3,3 +3,7 @@
 
 pytest
 httpx
+# Drives the actual game in a headless browser (check.sh step 6) to confirm the
+# on-screen rules still match the server and the buttons fit on phones. After
+# installing, fetch the browser once:  python3 -m playwright install chromium
+playwright
